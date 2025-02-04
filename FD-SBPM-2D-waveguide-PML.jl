@@ -168,9 +168,6 @@ function get_correlation(Efield, dx, dz, nametag)
     ξvind = pks.indices
     peakh = pks.heights
 
-    serialize("xiv_$nametag.dat", ξv)
-    serialize("xi_$nametag.dat", ξ)
-
     return Pz, ξ, ξvind, ξv, peakh, Pξ_abs 
 end
 
@@ -266,6 +263,7 @@ function get_h(
     βs = ξv .+ β
 
     hs = []
+
     @time for v in 1:mode_num
 
         # Get h0.
@@ -297,7 +295,7 @@ function get_h(
 
     end
 
-    return h
+    return hs
 
 end
 
@@ -330,20 +328,27 @@ function main()
     Eline = get_gaussian_input(x, xshift, w)
  
     α = 0.5001
+    #=
     Efield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, Eline)
 
     serialize("x.dat", x)
     serialize("z.dat", z)
+    serialize("Efield.dat", Efield)
 
-    nametag = "psi"
-    P, ξ, ξvind, ξv, peakh, Pξ_abs= get_correlation(Efield, dx, dz, nametag)
+    nametag = "Efield"
+    Pz, ξ, ξvind, ξv, peakh, Pξ_abs= get_correlation(Efield, dx, dz, nametag)
+
+    serialize("xiv_$nametag.dat", ξv)
+    serialize("xi_$nametag.dat", ξ)
 
     figname = "./FD_SBPM-2D-waveguide-PML.png"
-    # plot_withlayout(x, z, Efield, n, Eline, P, ξ, ξv, ξvind, peakh, Pξ_abs, figname)
+    plot_withlayout(x, z, Efield, n, Eline, Pz, ξ, ξv, ξvind, peakh, Pξ_abs, figname)
 
+    =#
     mode_num = 3
     Efield = deserialize("./Efield.dat")
-    # h = get_h(Lx, Lz, α, mode_num, Efield, n0, n , λ, dz, ξv)
+    ξv = deserialize("./xiv_Efield.dat")
+    hs = get_h(Lx, Lz, α, mode_num, Efield, n0, n , λ, dz, ξv)
 end
 
 main()
