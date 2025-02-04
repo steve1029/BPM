@@ -101,11 +101,11 @@ intensity1 = abs2.(Efield1)
 intensity2 = abs2.(Efield2)
 
 # Plot irradiance.
-layout = @layout [a b]
 hm1 = heatmap(intensity1, dpi=300, clim=(0,1), c=:thermal, xlabel='x', ylabel='z', zlabel="Intensity", title="TBC off")
 hm2 = heatmap(intensity2, dpi=300, clim=(0,1), c=:thermal, xlabel='x', ylabel='z', zlabel="Intensity", title="TBC on")
 
 plots = [hm1, hm2]
+layout = @layout [a b]
 plot(plots..., layout=layout, size=(1200, 600))
 
 savefig("./my-FD_SBPM-2D-free-TBC.png")
