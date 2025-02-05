@@ -214,6 +214,8 @@ function plot_withlayout(
     x::AbstractVector, 
     z::AbstractVector, 
     field::AbstractMatrix, 
+    n0::Float64,
+    Δn::Float64,
     n::Matrix{ComplexF64}, 
     input::AbstractVector, 
     corr::AbstractVector, 
@@ -229,29 +231,38 @@ function plot_withlayout(
 
     intensity = abs2.(field)
     anno = [(xi, h, "ξv=$xi") for (xi, h) in zip(ξv, peakh)]
-    input_beam_plot = plot(x, abs.(input).^2, 
-                            label="input beam", lw=1.5, dpi=300, size=(500,500))
-    hm1 = heatmap(z, x, intensity, 
+    input_abs = (abs.(input).^2) 
+    input = plot(x/um, input_abs/maximum(input_abs), 
+                            label="input beam", 
+                            xlabel="Normalized Intensity",
+                            ylabel="x (μm)",
+                            lw=1.5, dpi=300,)
+    hm1 = heatmap(z, x/um, intensity, 
                     dpi=300, clim=(0,1), c=:thermal, 
                     xlabel="z (μm)", ylabel="x (μm)", zlabel="Intensity", 
                     title="Straight waveguide")
-    hm2 = heatmap(z, x, real(n), 
-                    dpi=300, clim=(-Inf,Inf), 
+    hm2 = heatmap(z, x/um, real(n), 
+                    dpi=300, 
+                    clim=(n0, n0+Δn), 
                     xlabel="z (μm)", ylabel="x (μm)", zlabel="index", 
                     title="Refractive index")
-    Pz = plot(z, real.(corr))
-    # Pfz = plot(ξ*um, modeintensity, xlim=(-0.2, 0.2), yscale=:log10)
-    Pfz_anal = plotpeaks(ξ*um, Pξ_abs; 
+    normed_corr = real.(corr) / maximum(real.(corr))
+    Pz = plot(z, normed_corr,
+                    xlabel="z (μm)", 
+                    ylabel="x (μm)",
+                    title="Correlation function")
+            # Pfz = plot(ξ*um, modeintensity, xlim=(-0.2, 0.2), yscale=:log10)
+    normed_Pξ_abs = Pξ_abs / maximum(Pξ_abs)
+    Pfz_anal = plotpeaks(ξ*um, normed_Pξ_abs; 
                             peaks=ξvind, 
                             prominences=true, widths=true, 
                             xlim=(-0.2, 0.2),
-                            ylim=(0, ymax),
+                            # ylim=(0, ymax),
                             yscale=:log10,  
                             # ylim=(10^-34, -10^-1),
                             annotations=anno)
 
-    # plots = [input_beam_plot, hm1, hm2, Pz, Pfz]
-    plots = [input_beam_plot, hm1, hm2, Pz, Pfz_anal]
+    plots = [input, hm1, hm2, Pz, Pfz_anal]
     # layout = @layout [a b c; d e{1,2}]
     # layout = grid(2, 3; widths=[1, 1, 2], heights=[0.5, 0.5])
  
@@ -267,6 +278,7 @@ function get_h(
     mode_num::Int,
     Efield::Matrix{ComplexF64},
     n0::Float64,
+    Δn::Float64,
     n::Matrix{ComplexF64},
     λ::Float64,
     ξv::Vector{Float64};
@@ -327,15 +339,19 @@ function get_h(
         ind = argmin(abs.(z .- lim))
         @printf("μ=%d, v=%d, ξv=%f, intgration limit=%f um\n", μ, v, -ξv[v]*um, lim/um)
         h = vec(sum(psi[:,1:ind], dims=2))
-        h = h / maximum(abs.(h))
-        hfield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, h)
+        # h = h / maximum(abs.(h))
 
         push!(hxys, h)
+        println("h$(v-1) calculated.")
+        if v == mode_num
+            return hxys
+        end
+
+        hfield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, h)
         push!(hfields, hfield)
 
         corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = correlation_method(hfield, dx, dz)
-        plot_withlayout(x, z, hfield, n, h, corr_h, ξ_h, ξv_h, ξvind_h, peakh_h, Pξ_abs_h, figname, ymax=ymax)
-        println("h$(v-1) calculated.")
+        plot_withlayout(x, z, hfield, n0, Δn, n, h, corr_h, ξ_h, ξv_h, ξvind_h, peakh_h, Pξ_abs_h, figname, ymax=ymax)
     end
 
     return hxys
@@ -343,18 +359,34 @@ function get_h(
 end
 
 function plot_h(
-    x::AbstractVector{T1},
-    hxys::AbstractVecOrMat{T2}) where T1 where T2
+    x::AbstractVector,
+    Eline::AbstractVector,
+    hxys::AbstractVecOrMat{T})::Int where T
+
+    insert!(hxys, 1, Eline)
+    num = length(hxys)
+
+    eachmode = Vector{T}(undef, num-1)
+    eachmode[num-1] = hxys[num-1]
+
+    for i in num-2:-1:1
+        eachmode[i] = hxys[i] - hxys[i+1]
+    end
+
+    # labels = ["input"; ["mode $(i-1)" for i in 1:num]]
+    labels = ["mode $(i-1)" for i in 1:(num-1)]
 
     plots = []
 
-    for (num, hxy) in enumerate(hxys)
-        y = real.(hxy) / maximum(abs.(real.(hxy)))
-        push!(plots, plot(x, y, 
+    um = 10^-6
+    for (num, mode) in enumerate(eachmode)
+        y = real.(mode) / maximum(abs.(real.(mode)))
+        push!(plots, plot(x/um, y, 
                             dpi=300, 
-                            label="mode $(num-1)", 
-                            xlabel="x", 
-                            ylabel="Normalized E field"
+                            label=labels[num], 
+                            xlabel="x (μm)", 
+                            ylabel="Normalized E field",
+                            ylim=(-1, 1)
                             ))
     end
 
@@ -415,18 +447,19 @@ function main()
 
     figname = "./FD_SBPM-2D-waveguide-PML.png"
     ymax = maximum(Pξ_abs)*1.05
-    println(ymax)
-    plot_withlayout(x, z, Efield, n, Eline, Pz, ξ, ξv, ξvind, peakh, Pξ_abs, figname; ymax=ymax)
+    serialize("./correlation_function_abs_max.dat", ymax)
+    plot_withlayout(x, z, Efield, n0, Δn, n, Eline, Pz, ξ, ξv, ξvind, peakh, Pξ_abs, figname; ymax=ymax)
 
     mode_num = 3
     Efield = deserialize("./Efield.dat")
     ξv = deserialize("./xiv_Efield.dat")
-    hxys = get_h(Lx, Lz, α, mode_num, Efield, n0, n , λ, ξv; ymax=ymax)
-    # hxys = get_h(Lx, Lz, α, mode_num, Efield, n0, n , λ, ξv)
+    ymax = deserialize("./correlation_function_abs_max.dat")
+    hxys = get_h(Lx, Lz, α, mode_num, Efield, n0, Δn, n , λ, ξv; ymax=ymax)
+    # hxys = get_h(Lx, Lz, α, mode_num, Efield, n0, Δn, n , λ, ξv)
     serialize("./hs.dat", hxys)
 
     hxys = deserialize("./hs.dat")
-    plot_h(x, hxys)
+    plot_h(x, Eline, hxys)
     println("Simulation finished.")
 end
 
