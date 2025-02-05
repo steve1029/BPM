@@ -4,8 +4,12 @@ using FFTW
 using Peaks
 using Profile
 using Serialization
+using Printf
 
-function get_gaussian_input(x, xshift, w)::Vector
+function get_gaussian_input(
+    x::AbstractVector, 
+    xshift::Float64, 
+    w::Float64)::Vector
     Eline = exp.(-((x.-xshift).^2 ./ (w^2))) .+ 0im
     return Eline
 end
@@ -137,13 +141,48 @@ function PML(
     return Tm, Tp, R
 end
 
+function get_Efield(
+    Nx::Int, 
+    Nz::Int, 
+    Lx::Float64, 
+    Lz::Float64, 
+    n0::Float64, 
+    n::Matrix{ComplexF64}, 
+    λ::Float64, 
+    α::Float64, 
+    input::Vector{ComplexF64}
+    )::Matrix{ComplexF64}
+
+    um = 10^-6
+    nm = 10^-9
+
+    npml = 10
+
+    x = range(-Lx/2, Lx/2; length=Nx)
+    z = range(0, Lz; length=Nz)
+
+    dx = step(x)
+    dz = step(z)
+
+    Tm, Tp, R = PML(Nx, Nz, npml, dx, n, λ)
+
+    Efield = zeros(ComplexF64, Nx, Nz)
+    Efield[:,1] = input
+
+    for k in 2:Nz
+        Efield[:,k] = to_next(k, α, λ, dx, dz, n0, n, Tm, Tp, R, Efield[:,k-1])
+    end
+
+    return Efield
+end
+
 """
-function get_correlation
+function correlation_method
 
     Note that Pf is not a function of ξ.
     Note that since fftfreq returns frequency, we need 2*π to make angular freq.
 """
-function get_correlation(Efield, dx, dz, nametag)
+function correlation_method(Efield::AbstractMatrix, dx::Float64, dz::Float64)
 
     Nz = size(Efield, 2)
     Pz = zeros(ComplexF64, Nz)
@@ -171,63 +210,45 @@ function get_correlation(Efield, dx, dz, nametag)
     return Pz, ξ, ξvind, ξv, peakh, Pξ_abs 
 end
 
-function get_Efield(
-    Nx::Int, 
-    Nz::Int, 
-    Lx, 
-    Lz, 
-    n0::Float64, 
+function plot_withlayout(
+    x::AbstractVector, 
+    z::AbstractVector, 
+    field::AbstractMatrix, 
     n::Matrix{ComplexF64}, 
-    λ::Float64, 
-    α::Float64, 
-    input::Vector{ComplexF64}
-    )::Matrix{ComplexF64}
-
-    um = 10^-6
-    nm = 10^-9
-
-    npml = 10
-
-    x = range(-Lx/2, Lx/2; length=Nx)
-    z = range(0, Lz; length=Nz)
-
-    dx = step(x)
-    dz = step(z)
-
-    @show dx / um
-    @show dz / um
-
-    Tm, Tp, R = PML(Nx, Nz, npml, dx, n, λ)
-
-    Efield = zeros(ComplexF64, Nx, Nz)
-    Efield[:,1] = input
-
-    @time for k in 2:Nz
-        Efield[:,k] = to_next(k, α, λ, dx, dz, n0, n, Tm, Tp, R, Efield[:,k-1])
-    end
-
-    return Efield
-end
-
-function plot_withlayout(x, z, field, n, input, corr, ξ, ξv, ξvind, peakh, Pξ_abs, figname)
+    input::AbstractVector, 
+    corr::AbstractVector, 
+    ξ::AbstractVector, 
+    ξv::AbstractVector, 
+    ξvind::AbstractVector, 
+    peakh::AbstractVector, 
+    Pξ_abs::AbstractVector, 
+    figname::String; ymax::Number=1)
 
     um = 10^-6
     nm = 10^-9
 
     intensity = abs2.(field)
     anno = [(xi, h, "ξv=$xi") for (xi, h) in zip(ξv, peakh)]
-    input_beam_plot = plot(x, abs.(input).^2, label="input beam", lw=1.5, dpi=300, size=(500,500))
-    hm1 = heatmap(z, x, intensity, dpi=300, clim=(0,1), c=:thermal, xlabel="z (μm)", ylabel="x (μm)", zlabel="Intensity", title="Straight waveguide")
-    hm2 = heatmap(z, x, real(n), dpi=300, clim=(-Inf,Inf), xlabel="z (μm)", ylabel="x (μm)", zlabel="index", title="Refractive index")
+    input_beam_plot = plot(x, abs.(input).^2, 
+                            label="input beam", lw=1.5, dpi=300, size=(500,500))
+    hm1 = heatmap(z, x, intensity, 
+                    dpi=300, clim=(0,1), c=:thermal, 
+                    xlabel="z (μm)", ylabel="x (μm)", zlabel="Intensity", 
+                    title="Straight waveguide")
+    hm2 = heatmap(z, x, real(n), 
+                    dpi=300, clim=(-Inf,Inf), 
+                    xlabel="z (μm)", ylabel="x (μm)", zlabel="index", 
+                    title="Refractive index")
     Pz = plot(z, real.(corr))
     # Pfz = plot(ξ*um, modeintensity, xlim=(-0.2, 0.2), yscale=:log10)
     Pfz_anal = plotpeaks(ξ*um, Pξ_abs; 
-                            peaks=ξvind, prominences=true, widths=true, 
-                            yscale=:log10, xlim=(-0.2, 0.2),
+                            peaks=ξvind, 
+                            prominences=true, widths=true, 
+                            xlim=(-0.2, 0.2),
+                            ylim=(0, ymax),
+                            yscale=:log10,  
+                            # ylim=(10^-34, -10^-1),
                             annotations=anno)
-
-    @show ξvind
-    @show ξv*um
 
     # plots = [input_beam_plot, hm1, hm2, Pz, Pfz]
     plots = [input_beam_plot, hm1, hm2, Pz, Pfz_anal]
@@ -240,17 +261,20 @@ function plot_withlayout(x, z, field, n, input, corr, ξ, ξv, ξvind, peakh, P�
 end
 
 function get_h(
-    Lx,
-    Lz,
-    α,
+    Lx::Float64,
+    Lz::Float64,
+    α::Float64,
     mode_num::Int,
     Efield::Matrix{ComplexF64},
     n0::Float64,
     n::Matrix{ComplexF64},
     λ::Float64,
-    dz::Float64,
-    ξv::Vector{Float64}
-    )::Matrix{ComplexF64}
+    ξv::Vector{Float64};
+    ymax::Number=1
+    )::Vector
+
+    um = 10^-6
+    nm = 10^-9
 
     Nx = size(Efield, 1)
     Nz = size(Efield, 2)
@@ -258,45 +282,88 @@ function get_h(
     x = range(-Lx/2, Lx/2; length=Nx)
     z = range(0, Lz; length=Nz)
 
-    k0 = 2*π / λ
-    β = n0 * k0
-    βs = ξv .+ β
+    dx = step(x)
+    dz = step(z)
 
-    hs = []
+    # k0 = 2*π / λ
+    # # β = n0 * k0
+    # βs = ξv .+ β
 
-    @time for v in 1:mode_num
+    # Since we inverted the sign of ξv, 
+    # as FFTW returns -ξ, not ξ, 
+    # roll back the sign of ξv.
+    ξv = -ξv
+
+    hfields = []
+    hxys = []
+
+    for v in 1:mode_num
+
+        nametag = "h$(v-1)"
+        figname = "./$nametag-after-propagation.png"
 
         # Get h0.
         if v == 1
-            Δβ = βs[2]-βs[1]
-            phasor = exp.(1im*Δβ*z)
-            lim = 2*π/ Δβ
-            ind = argmin(abs.(z .- lim))
-            psi = Efield .* dz .* repeat(phasor, Nx, 1)
-            h0 = vec(sum(psi[:,1:ind], dims=2))
-            push!(hs, h0)
+            hfield = Efield
+            μ=mode_num
 
         # Get the remaining h
+        elseif v > 1 && v < mode_num
+            hfield = hfields[v-1]
+            μ=mode_num
+
         else
-            oldh = hs[v-1]
-            hfield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, oldh)
+            hfield = hfields[v-1]
+            μ=1
 
-            nametag = "h$v"
-            figname = "./$nametag-profile.png"
-
-            corr, ξ, ξvind, ξv, peakh, Pξ_abs = get_correlation(field, dx, dz, nametag)
-            plot_withlayout(x, z, hfield, n, oldh, corr, ξ, ξv, ξvind, peakh, Pξ_abs, figname)
-
-            lim = 2*π/(ξμ-ξv[1])
-            ind = argmin(abs.(z .- lim))
-            newh = sum(hfield[:,1:ind])
-            push!(hs, newh)
         end
 
+        phasor = exp.(-1im*ξv[μ]*z) # since ξv is negetive here, minus sign is added.
+        phasor_mat = repeat(transpose(phasor), Nx, 1)
+        psi = hfield .* dz .* phasor_mat
+
+        Δβ = ξv[μ]-ξv[v]
+        lim = 2*π/ abs(Δβ)
+        ind = argmin(abs.(z .- lim))
+        @printf("μ=%d, v=%d, ξv=%f, intgration limit=%f um\n", μ, v, -ξv[v]*um, lim/um)
+        h = vec(sum(psi[:,1:ind], dims=2))
+        h = h / maximum(abs.(h))
+        hfield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, h)
+
+        push!(hxys, h)
+        push!(hfields, hfield)
+
+        corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = correlation_method(hfield, dx, dz)
+        plot_withlayout(x, z, hfield, n, h, corr_h, ξ_h, ξv_h, ξvind_h, peakh_h, Pξ_abs_h, figname, ymax=ymax)
+        println("h$(v-1) calculated.")
     end
 
-    return hs
+    return hxys
 
+end
+
+function plot_h(
+    x::AbstractVector{T1},
+    hxys::AbstractVecOrMat{T2}) where T1 where T2
+
+    plots = []
+
+    for (num, hxy) in enumerate(hxys)
+        y = real.(hxy) / maximum(abs.(real.(hxy)))
+        push!(plots, plot(x, y, 
+                            dpi=300, 
+                            label="mode $(num-1)", 
+                            xlabel="x", 
+                            ylabel="Normalized E field"
+                            ))
+    end
+
+    n = length(plots)
+    allplot = plot(plots..., dpi=300, layout=grid(n,1), size=(500, 200*n), link=:x)
+
+    savefig(allplot, "./all_hxy.png")
+
+    return 0
 end
 
 function main()
@@ -316,6 +383,9 @@ function main()
     dx = step(x)
     dz = step(z)
 
+    @show dx / um
+    @show dz / um
+
     n0 = 1.45
     σ = 2*um
     Δn = 0.02
@@ -328,7 +398,7 @@ function main()
     Eline = get_gaussian_input(x, xshift, w)
  
     α = 0.5001
-    #=
+
     Efield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, Eline)
 
     serialize("x.dat", x)
@@ -336,19 +406,28 @@ function main()
     serialize("Efield.dat", Efield)
 
     nametag = "Efield"
-    Pz, ξ, ξvind, ξv, peakh, Pξ_abs= get_correlation(Efield, dx, dz, nametag)
+    Pz, ξ, ξvind, ξv, peakh, Pξ_abs= correlation_method(Efield, dx, dz)
+
+    @show ξv*um
 
     serialize("xiv_$nametag.dat", ξv)
     serialize("xi_$nametag.dat", ξ)
 
     figname = "./FD_SBPM-2D-waveguide-PML.png"
-    plot_withlayout(x, z, Efield, n, Eline, Pz, ξ, ξv, ξvind, peakh, Pξ_abs, figname)
+    ymax = maximum(Pξ_abs)*1.05
+    println(ymax)
+    plot_withlayout(x, z, Efield, n, Eline, Pz, ξ, ξv, ξvind, peakh, Pξ_abs, figname; ymax=ymax)
 
-    =#
     mode_num = 3
     Efield = deserialize("./Efield.dat")
     ξv = deserialize("./xiv_Efield.dat")
-    hs = get_h(Lx, Lz, α, mode_num, Efield, n0, n , λ, dz, ξv)
+    hxys = get_h(Lx, Lz, α, mode_num, Efield, n0, n , λ, ξv; ymax=ymax)
+    # hxys = get_h(Lx, Lz, α, mode_num, Efield, n0, n , λ, ξv)
+    serialize("./hs.dat", hxys)
+
+    hxys = deserialize("./hs.dat")
+    plot_h(x, hxys)
+    println("Simulation finished.")
 end
 
-main()
+@time main()
