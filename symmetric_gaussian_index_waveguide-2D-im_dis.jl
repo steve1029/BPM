@@ -1,17 +1,25 @@
 include("./FD-SBPM-2D-waveguide-PML.jl")
 
+using Serialization
 using .FD_SBPM_2D
 
 function main()
+
+    savedir = joinpath(pwd(),"im-dis-FD_SBPM_2D-PML/")
+
+    if !isdir(savedir)
+        mkdir(savedir)
+        println("Folder created.")
+    end
 
     um = 10^-6
     nm = 10^-9
 
     Nx = 400
-    Nz = 10000
+    Nz = 200
 
     Lx = 20*um
-    Lz = 25000*um
+    Lz = 500*um
 
     x = range(-Lx/2, Lx/2; length=Nx)
     z = range(0, Lz; length=Nz)
@@ -39,11 +47,14 @@ function main()
 
     Efield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, Eline; im_dis=true)
 
-    savedir = "./im-dis-FD_SBPM_2D-PML/"
     serialize(savedir*"x.dat", x)
     serialize(savedir*"z.dat", z)
     serialize(savedir*"Efield.dat", Efield)
 
+    figname = "im_dis-Efield.png"
+    plots = plot_field(x, z, Efield, n0, Δn, n, Eline, figname; savedir=savedir, save=true)
+
+    #=
     nametag = "Efield"
     Pz, ξ, ξvind, ξv, peakh, Pξ_abs= correlation_method(Efield, dx, dz)
 
@@ -68,6 +79,7 @@ function main()
     ξv = deserialize(savedir*"xiv_Efield.dat")
     mode_transverse_profiles = deserialize(savedir*"mode_transverse_profiles.dat")
     plot_mode(x, mode_transverse_profiles, ξv, β)
+    =#
     println("Simulation finished.")
 end
 
