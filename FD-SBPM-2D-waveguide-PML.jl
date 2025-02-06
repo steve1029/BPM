@@ -5,14 +5,13 @@ using LinearAlgebra
 using FFTW
 using Peaks
 using Profile
-using Serialization
 using Printf
 
 const um = 10^-6
 const nm = 10^-9
 
 export get_gaussian_input, get_step_index_profile, get_symmetric_Gaussian_index_profile,
-        _to_next, _pml, get_Efield, correlation_method, plot_withlayout, get_h, plot_mode
+        _to_next, _pml, get_Efield, correlation_method, plot_field, plot_with_corr, get_h, plot_mode
 
 function get_gaussian_input(
     x::AbstractVector, 
@@ -79,12 +78,59 @@ function _to_next(
     E::Vector{ComplexF64}; im_dis=false
     )::Vector{ComplexF64}
 
-    if im_dis == true
-        dz = 1im*dz
-    end
 
     k0 = 2*π / λ
     nd = n[:,step].^2 .- n0^2
+
+    if im_dis == true
+        return _to_next_im_dis(step, α, λ, dx, dz, n0, n, Tm, Tp, R, E)
+    else
+        b = (2*α.* R[:, step] /dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*n0/dz)
+        a = (-α/dx^2) .* Tm[:, step]
+        c = (-α/dx^2) .* Tp[:, step]
+        A = diagm(-1=>a, 0=>b, 1=>c)
+
+        D = (1-α)*k0^2 .* nd .- (2*(1-α)/dx^2 .* R[:, step]) .+ (2im*k0*n0/dz)
+        above = ((1-α) / dx^2) .* Tp[:, step]
+        below = ((1-α) / dx^2) .* Tm[:, step]
+
+        B = diagm(-1=>below, 0=>D, 1=>above)
+
+        r = B * E
+        newE = A \ r
+    end
+    return newE
+end
+
+"""
+function _to_next_im_dis
+    In this function, we used 'exp(i(wt-kr))' notation.
+
+# Arguments
+# Returns
+# Example
+"""
+function _to_next_im_dis(
+    step::Int,
+    α::Float64,
+    λ::Float64,
+    dx::Float64, 
+    dz::Float64, 
+    n0::Float64,
+    n::Matrix{ComplexF64}, 
+    Tm::Matrix{ComplexF64}, 
+    Tp::Matrix{ComplexF64}, 
+    R::Matrix{ComplexF64}, 
+    E::Vector{ComplexF64}
+    )::Vector{ComplexF64}
+
+
+    k0 = 2*π / λ
+    nd = n[:,step].^2 .- n0^2
+
+    if im_dis == true
+        dz = 1im*dz
+    end
 
     b = (2*α.* R[:, step] /dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*n0/dz)
     a = (-α/dx^2) .* Tm[:, step]
@@ -102,6 +148,7 @@ function _to_next(
 
     return newE
 end
+
 
 """
 function _pml
@@ -219,7 +266,7 @@ function correlation_method(Efield::AbstractMatrix, dx::Float64, dz::Float64)
     return Pz, ξ, ξvind, ξv, peakh, Pξ_abs 
 end
 
-function plot_withlayout(
+function plot_field(
     x::AbstractVector, 
     z::AbstractVector, 
     field::AbstractMatrix, 
@@ -227,16 +274,9 @@ function plot_withlayout(
     Δn::Float64,
     n::Matrix{ComplexF64}, 
     input::AbstractVector, 
-    corr::AbstractVector, 
-    ξ::AbstractVector, 
-    ξv::AbstractVector, 
-    ξvind::AbstractVector, 
-    peakh::AbstractVector, 
-    Pξ_abs::AbstractVector, 
-    figname::String; ymax::Number=Inf, savedir=savedir)
-
+    figname::String; savedir=savedir, save=true)
+    
     intensity = abs2.(field)
-    anno = [(xi, h, "ξv=$xi") for (xi, h) in zip(ξv, peakh)]
     input_abs = (abs.(input).^2) 
     input = plot(x/um, input_abs/maximum(input_abs), 
                             label="input beam", 
@@ -252,13 +292,39 @@ function plot_withlayout(
                     clim=(n0, n0+Δn), 
                     xlabel="z (μm)", ylabel="x (μm)", zlabel="index", 
                     title="Refractive index")
-    normed_corr = real.(corr) / maximum(real.(corr))
-    Pz = plot(z, normed_corr,
-                    xlabel="z (μm)", 
-                    ylabel="x (μm)",
-                    title="Correlation function")
-            # Pfz = plot(ξ*um, modeintensity, xlim=(-0.2, 0.2), yscale=:log10)
+
+    plots = [input, hm1, hm2]
+    layout = @layout [grid(1,3)]
+    plot(plots..., layout=layout, size=(1400, 500))
+
+    if save == true
+        savefig(savedir*figname)
+    end
+
+    return plots
+end
+
+
+function plot_with_corr(
+    x::AbstractVector, 
+    z::AbstractVector, 
+    field::AbstractMatrix, 
+    n0::Float64,
+    Δn::Float64,
+    n::Matrix{ComplexF64}, 
+    input::AbstractVector, 
+    corr::AbstractVector, 
+    ξ::AbstractVector, 
+    ξv::AbstractVector, 
+    ξvind::AbstractVector, 
+    peakh::AbstractVector, 
+    Pξ_abs::AbstractVector, 
+    figname::String; ymax::Number=Inf, savedir=savedir)
+
+    plots = plot_field(x,z,field,n0, Δn, n, input, figname; savedir=savedir, save=false)
+    
     normed_Pξ_abs = Pξ_abs / maximum(Pξ_abs)
+    anno = [(xi, h, "ξv=$xi") for (xi, h) in zip(ξv, peakh)]
     Pfz_anal = plotpeaks(ξ*um, normed_Pξ_abs; 
                             peaks=ξvind, 
                             prominences=true, widths=true, 
@@ -268,10 +334,10 @@ function plot_withlayout(
                             # ylim=(10^-34, -10^-1),
                             annotations=anno)
 
-    plots = [input, hm1, hm2, Pz, Pfz_anal]
     # layout = @layout [a b c; d e{1,2}]
     # layout = grid(2, 3; widths=[1, 1, 2], heights=[0.5, 0.5])
  
+    plots = vcat(plots, [Pz, Pfz_anal])
     layout = @layout [grid(1,3); b{0.333w} c{0.666w}]
     plot(plots..., layout=layout, size=(1400, 1000))
     savefig(savedir*figname)
@@ -350,7 +416,7 @@ function get_h(
 
                 figname = "./$nametag-after-propagation.png"
                 corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = correlation_method(hfield, dx, dz)
-                plot_withlayout(x, z, hfield, n0, Δn, n, h, corr_h, 
+                plot_with_corr(x, z, hfield, n0, Δn, n, h, corr_h, 
                                 ξ_h, ξv_h, ξvind_h, peakh_h, Pξ_abs_h, figname; ymax=ymax)
 
                 iter_num += 1

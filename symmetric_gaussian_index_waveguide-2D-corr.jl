@@ -54,7 +54,7 @@ function main()
     figname = "./FD_SBPM-2D-waveguide-PML.png"
     ymax = maximum(Pξ_abs)*1.05
     serialize("./correlation_function_abs_max.dat", ymax)
-    plot_withlayout(x, z, Efield, n0, Δn, n, Eline, Pz, ξ, ξv, ξvind, peakh, Pξ_abs, figname; ymax=ymax)
+    plot_with_corr(x, z, Efield, n0, Δn, n, Eline, Pz, ξ, ξv, ξvind, peakh, Pξ_abs, figname; ymax=ymax)
 
     mode_num = 3
     Efield = deserialize("./Efield.dat")
