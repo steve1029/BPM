@@ -29,7 +29,8 @@ function main()
 
     λ = 850*nm
     k0 = 2*π / λ
-    β = k0 * n0
+    ntrial = 1.46
+    β = k0 * ntrial
     @assert dz < (λ/2 / n0 / Δn)
     w = 2*um
     xshift = 1*um
@@ -37,7 +38,7 @@ function main()
  
     α = 0.5001
 
-    Efield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, Eline)
+    Efield = get_Efield(x, z, n0, n, λ, α, Eline)
 
     serialize("x.dat", x)
     serialize("z.dat", z)
