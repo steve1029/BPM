@@ -44,6 +44,7 @@ function main()
     serialize(savedir*"z.dat", z)
     serialize(savedir*"Efield.dat", Efield)
 
+    #=
     nametag = "Efield"
     Pz, ξ, ξvind, ξv, peakh, Pξ_abs= correlation_method(Efield, dx, dz)
 
@@ -68,6 +69,7 @@ function main()
     ξv = deserialize(savedir*"xiv_Efield.dat")
     mode_transverse_profiles = deserialize(savedir*"mode_transverse_profiles.dat")
     plot_mode(x, mode_transverse_profiles, ξv, β)
+    =#
     println("Simulation finished.")
 end
 
