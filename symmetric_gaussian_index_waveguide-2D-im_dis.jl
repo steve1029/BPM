@@ -19,7 +19,7 @@ function main()
     Nz = 200
 
     Lx = 20*um
-    Lz = 500*um
+    Lz = 50*um
 
     x = range(-Lx/2, Lx/2; length=Nx)
     z = range(0, Lz; length=Nz)
@@ -45,14 +45,19 @@ function main()
  
     α = 0.5001
 
-    Efield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, Eline; im_dis=true)
+    Efield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, Eline)
+    trialξ = k0 * (n0 + Δn*0.6)
+    trialξ = k0 * n0 + 111/um
+    @show trialξ*um
+    # trialξ = 0
+    psiτ = im_dis(Efield, z, β, trialξ)
 
     serialize(savedir*"x.dat", x)
     serialize(savedir*"z.dat", z)
     serialize(savedir*"Efield.dat", Efield)
 
     figname = "im_dis-Efield.png"
-    plots = plot_field(x, z, Efield, n0, Δn, n, Eline, figname; savedir=savedir, save=true)
+    plots = plot_field(x, z, psiτ, n0, Δn, n, Eline, figname; savedir=savedir, save=true)
 
     #=
     nametag = "Efield"
