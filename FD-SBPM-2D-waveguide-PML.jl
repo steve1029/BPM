@@ -11,7 +11,7 @@ const um = 10^-6
 const nm = 10^-9
 
 export get_gaussian_input, get_step_index_profile, get_symmetric_Gaussian_index_profile,
-        _to_next, _pml, get_Efield, correlation_method, plot_field, plot_with_corr, get_h, plot_mode
+        _to_next, _pml, get_Efield, correlation_method, plot_field, plot_with_corr, get_h, plot_mode, im_dis
 
 function get_gaussian_input(
     x::AbstractVector, 
@@ -75,62 +75,12 @@ function _to_next(
     Tm::Matrix{ComplexF64}, 
     Tp::Matrix{ComplexF64}, 
     R::Matrix{ComplexF64}, 
-    E::Vector{ComplexF64}; im_dis=false
+    E::Vector{ComplexF64};
     )::Vector{ComplexF64}
 
 
     k0 = 2*π / λ
     nd = n[:,step].^2 .- n0^2
-
-    if im_dis == true
-        return _to_next_im_dis(step, α, λ, dx, dz, n0, n, Tm, Tp, R, E)
-    else
-        b = (2*α.* R[:, step] /dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*n0/dz)
-        a = (-α/dx^2) .* Tm[:, step]
-        c = (-α/dx^2) .* Tp[:, step]
-        A = diagm(-1=>a, 0=>b, 1=>c)
-
-        D = (1-α)*k0^2 .* nd .- (2*(1-α)/dx^2 .* R[:, step]) .+ (2im*k0*n0/dz)
-        above = ((1-α) / dx^2) .* Tp[:, step]
-        below = ((1-α) / dx^2) .* Tm[:, step]
-
-        B = diagm(-1=>below, 0=>D, 1=>above)
-
-        r = B * E
-        newE = A \ r
-    end
-    return newE
-end
-
-"""
-function _to_next_im_dis
-    In this function, we used 'exp(i(wt-kr))' notation.
-
-# Arguments
-# Returns
-# Example
-"""
-function _to_next_im_dis(
-    step::Int,
-    α::Float64,
-    λ::Float64,
-    dx::Float64, 
-    dz::Float64, 
-    n0::Float64,
-    n::Matrix{ComplexF64}, 
-    Tm::Matrix{ComplexF64}, 
-    Tp::Matrix{ComplexF64}, 
-    R::Matrix{ComplexF64}, 
-    E::Vector{ComplexF64}
-    )::Vector{ComplexF64}
-
-
-    k0 = 2*π / λ
-    nd = n[:,step].^2 .- n0^2
-
-    if im_dis == true
-        dz = 1im*dz
-    end
 
     b = (2*α.* R[:, step] /dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*n0/dz)
     a = (-α/dx^2) .* Tm[:, step]
@@ -209,7 +159,7 @@ function get_Efield(
     n::Matrix{ComplexF64}, 
     λ::Float64, 
     α::Float64, 
-    input::Vector{ComplexF64}; im_dis=false
+    input::Vector{ComplexF64};
     )::Matrix{ComplexF64}
 
    npml = 10
@@ -226,7 +176,7 @@ function get_Efield(
     Efield[:,1] = input
 
     for k in 2:Nz
-        Efield[:,k] = _to_next(k, α, λ, dx, dz, n0, n, Tm, Tp, R, Efield[:,k-1]; im_dis=im_dis)
+        Efield[:,k] = _to_next(k, α, λ, dx, dz, n0, n, Tm, Tp, R, Efield[:,k-1])
     end
 
     return Efield
@@ -466,4 +416,21 @@ function plot_mode(
     return 0
 end
 
+function im_dis(
+    Efield::AbstractMatrix{ComplexF64}, 
+    z::AbstractVector, 
+    β::Number,
+    trialξ::Number)
+
+    Nx = size(Efield, 1)
+    dz = step(z)
+    τ = 1im*dz
+    zphase = exp.(z.*trialξ) ./ exp.(-1im.*z.*(trialξ+β))
+    zphase_mat = repeat(transpose(zphase), Nx, 1)
+
+    psiτ = Efield .* zphase_mat
+
+    return psiτ
 end
+
+end # module end.
