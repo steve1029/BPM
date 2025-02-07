@@ -15,8 +15,8 @@ export get_gaussian_input, get_step_index_profile, get_symmetric_Gaussian_index_
 
 function get_gaussian_input(
     x::AbstractVector, 
-    xshift::Float64, 
-    w::Float64)::Vector
+    xshift::Number, 
+    w::Number)::Vector
     Eline = exp.(-((x.-xshift).^2 ./ (w^2))) .+ 0im
     return Eline
 end
@@ -24,10 +24,10 @@ end
 function get_step_index_profile(
     Nx::Int, 
     Nz::Int,
-    slabthick::Float64,
-    cladthick::Float64,
-    slabindex::Float64,
-    cladindex::Float64
+    slabthick::Number,
+    cladthick::Number,
+    slabindex::Number,
+    cladindex::Number
     )::Matrix
     
     n = ones(ComplexF64, Nx, Nz)
@@ -44,9 +44,9 @@ end
 
 function get_symmetric_Gaussian_index_profile(
     x,
-    n0::Float64,
-    σ::Float64,
-    Δn::Float64,
+    n0::Number,
+    σ::Number,
+    Δn::Number,
     Nx::Int64, 
     Nz::Int64)::Matrix
     
@@ -66,11 +66,60 @@ function _to_next
 """
 function _to_next(
     step::Int,
-    α::Float64,
-    λ::Float64,
-    dx::Float64, 
-    dz::Float64, 
-    n0::Float64,
+    α::Number,
+    λ::Number,
+    dx::Number, 
+    dz::Number, 
+    n0::Number,
+    n::Matrix{ComplexF64}, 
+    Tm::Matrix{ComplexF64}, 
+    Tp::Matrix{ComplexF64}, 
+    R::Matrix{ComplexF64}, 
+    E::Vector{ComplexF64}; im_dis=false
+    )::Vector{ComplexF64}
+
+    #=
+    if im_dis == true
+        newE = _to_next_imdis(step, α, λ, dx, dz, n0, n, Tm, Tp, R, E)
+        return newE
+    end
+    =#
+
+    k0 = 2*π / λ
+    nd = n[:,step].^2 .- n0^2
+
+    b = (2*α.* R[:, step] /dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*n0/dz)
+    a = (-α/dx^2) .* Tm[:, step]
+    c = (-α/dx^2) .* Tp[:, step]
+    A = diagm(-1=>a, 0=>b, 1=>c)
+
+    D = (1-α)*k0^2 .* nd .- (2*(1-α)/dx^2 .* R[:, step]) .+ (2im*k0*n0/dz)
+    above = ((1-α) / dx^2) .* Tp[:, step]
+    below = ((1-α) / dx^2) .* Tm[:, step]
+
+    B = diagm(-1=>below, 0=>D, 1=>above)
+
+    r = B * E
+    newE = A \ r
+
+    return newE
+end
+
+"""
+function _to_next_imdis
+    In this function, we used 'exp(i(wt-kr))' notation.
+
+# Arguments
+# Returns
+# Example
+"""
+function _to_next_imdis(
+    step::Int,
+    α::Number,
+    λ::Number,
+    dx::Number, 
+    dz::Number, 
+    n0::Number,
     n::Matrix{ComplexF64}, 
     Tm::Matrix{ComplexF64}, 
     Tp::Matrix{ComplexF64}, 
@@ -78,6 +127,7 @@ function _to_next(
     E::Vector{ComplexF64};
     )::Vector{ComplexF64}
 
+    dz = 1im*dz
 
     k0 = 2*π / λ
     nd = n[:,step].^2 .- n0^2
@@ -113,9 +163,9 @@ function _pml(
     Nx::Int64,
     Nz::Int64,
     npml::Int64,
-    dx::Float64,
+    dx::Number,
     np::Matrix{ComplexF64}, 
-    λ::Float64)::Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, Matrix{ComplexF64}}
+    λ::Number)::Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, Matrix{ComplexF64}}
 
     rc0 = 1.e-16
     μ0 = 4*π*10^-7
@@ -151,21 +201,19 @@ function _pml(
 end
 
 function get_Efield(
-    Nx::Int, 
-    Nz::Int, 
-    Lx::Float64, 
-    Lz::Float64, 
-    n0::Float64, 
+    x::AbstractVector,
+    z::AbstractVector,
+    n0::Number, 
     n::Matrix{ComplexF64}, 
-    λ::Float64, 
-    α::Float64, 
-    input::Vector{ComplexF64};
+    λ::Number, 
+    α::Number, 
+    input::Vector{ComplexF64}; im_dis=false
     )::Matrix{ComplexF64}
 
-   npml = 10
+    npml = 10
 
-    x = range(-Lx/2, Lx/2; length=Nx)
-    z = range(0, Lz; length=Nz)
+    Nx = length(x) 
+    Nz = length(z)
 
     dx = step(x)
     dz = step(z)
@@ -176,7 +224,7 @@ function get_Efield(
     Efield[:,1] = input
 
     for k in 2:Nz
-        Efield[:,k] = _to_next(k, α, λ, dx, dz, n0, n, Tm, Tp, R, Efield[:,k-1])
+        Efield[:,k] = _to_next(k, α, λ, dx, dz, n0, n, Tm, Tp, R, Efield[:,k-1];)
     end
 
     return Efield
@@ -188,7 +236,7 @@ function correlation_method
     Note that Pf is not a function of ξ.
     Note that since fftfreq returns frequency, we need 2*π to make angular freq.
 """
-function correlation_method(Efield::AbstractMatrix, dx::Float64, dz::Float64)
+function correlation_method(Efield::AbstractMatrix, dx::Number, dz::Number)
 
     Nz = size(Efield, 2)
     Pz = zeros(ComplexF64, Nz)
@@ -220,8 +268,8 @@ function plot_field(
     x::AbstractVector, 
     z::AbstractVector, 
     field::AbstractMatrix, 
-    n0::Float64,
-    Δn::Float64,
+    n0::Number,
+    Δn::Number,
     n::Matrix{ComplexF64}, 
     input::AbstractVector, 
     figname::String; savedir=savedir, save=true)
@@ -259,8 +307,8 @@ function plot_with_corr(
     x::AbstractVector, 
     z::AbstractVector, 
     field::AbstractMatrix, 
-    n0::Float64,
-    Δn::Float64,
+    n0::Number,
+    Δn::Number,
     n::Matrix{ComplexF64}, 
     input::AbstractVector, 
     corr::AbstractVector, 
@@ -294,16 +342,16 @@ function plot_with_corr(
 end
 
 function get_h(
-    Lx::Float64,
-    Lz::Float64,
-    α::Float64,
+    Lx::Number,
+    Lz::Number,
+    α::Number,
     mode_num::Int,
     Efield::Matrix{ComplexF64},
-    n0::Float64,
-    Δn::Float64,
+    n0::Number,
+    Δn::Number,
     n::Matrix{ComplexF64},
-    λ::Float64,
-    ξv::Vector{Float64};
+    λ::Number,
+    ξv::Vector{Number};
     ymax::Number=Inf
     )::Vector
 
@@ -384,7 +432,7 @@ function plot_mode(
     x::AbstractVector,
     mode_profiles::AbstractVecOrMat{T},
     ξv::AbstractVector,
-    β::Float64
+    β::Number
     )::Int where T
 
     num = length(mode_profiles)

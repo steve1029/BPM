@@ -19,10 +19,15 @@ function main()
     Nz = 200
 
     Lx = 20*um
-    Lz = 50*um
+    Lz = 100*um
 
     x = range(-Lx/2, Lx/2; length=Nx)
     z = range(0, Lz; length=Nz)
+
+    im_dis = true
+    if im_dis == true
+        z=1im.*z
+    end
 
     dx = step(x)
     dz = step(z)
@@ -37,27 +42,32 @@ function main()
 
     λ = 850*nm
     k0 = 2*π / λ
-    β = k0 * n0
-    @assert dz < (λ/2 / n0 / Δn)
+    Δβ = 0.12/um
+    @assert abs(Δβ) < (k0*Δn)
+    neff = Δβ/k0 + n0
+    @show neff
+    # β = k0 * ntrial
+    # @show (β-(k0*n0))*um
+    @assert abs.(dz) < (λ/2 / n0 / Δn)
     w = 2*um
     xshift = 1*um
     Eline = get_gaussian_input(x, xshift, w)
  
     α = 0.5001
 
-    Efield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, Eline)
-    trialξ = k0 * (n0 + Δn*0.6)
-    trialξ = k0 * n0 + 111/um
-    @show trialξ*um
+    Efield = get_Efield(x, z, neff, n, λ, α, Eline)
+    # trialξ = k0 * (n0 + Δn*0.6)
+    # trialξ = k0 * n0 + 111/um
+    # @show trialξ*um
     # trialξ = 0
-    psiτ = im_dis(Efield, z, β, trialξ)
+    # psiτ = im_dis(Efield, z, β, trialξ)
 
     serialize(savedir*"x.dat", x)
     serialize(savedir*"z.dat", z)
     serialize(savedir*"Efield.dat", Efield)
 
     figname = "im_dis-Efield.png"
-    plots = plot_field(x, z, psiτ, n0, Δn, n, Eline, figname; savedir=savedir, save=true)
+    plots = plot_field(x, abs.(z), Efield, n0, Δn, n, Eline, figname; savedir=savedir, save=true)
 
     #=
     nametag = "Efield"
