@@ -1,6 +1,7 @@
 include("FD-SBPM-2D-waveguide-PML.jl")
 
 using .FD_SBPM_2D
+using Serialization
 
 function main()
 
@@ -37,34 +38,64 @@ function main()
  
     α = 0.5001
 
-    Efield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, Eline)
+    target = 0.12
+    nt = target*um/k0 + n0
+
+    nametag = "Efield"
+    Pzname = "Pz_$nametag.dat"
+    ξvname = "xiv_$nametag.dat"
+    ξvindname = "xiv_index_$nametag.dat"
+    ξname = "xi_$nametag.dat"
+    ymaxname = "./correlation_function_abs_max.dat"
+    peakhname = "peakh_$nametag.dat"
+    Pξ_absname = "Pxi_abs_$nametag.dat"
+
+    #=
+    Efield = get_Efield(x, z, nt, n, λ, α, Eline)
 
     serialize("x.dat", x)
     serialize("z.dat", z)
     serialize("Efield.dat", Efield)
 
-    nametag = "Efield"
     Pz, ξ, ξvind, ξv, peakh, Pξ_abs= correlation_method(Efield, dx, dz)
 
-    @show ξv*um
+    ymax = maximum(Pξ_abs)*1.05
 
-    serialize("xiv_$nametag.dat", ξv)
-    serialize("xi_$nametag.dat", ξ)
+    @show ξv*um
+    @show peakh
+    @show ξvind
+
+    serialize(Pzname, Pz)
+    serialize(ξvname, ξv)
+    serialize(ξvindname, ξvind)
+    serialize(ξname, ξ)
+    serialize(ymaxname, ymax)
+    serialize(peakhname, peakh)
+    serialize(Pξ_absname, Pξ_abs)
+    =#
+
+    x = deserialize("./x.dat")
+    z = deserialize("./z.dat")
+    Efield = deserialize("./Efield.dat")
+    Pz = deserialize(Pzname)
+    ξ = deserialize(ξname)
+    ξv = deserialize(ξvname)
+    ξvind = deserialize(ξvindname)
+    peakh = deserialize(peakhname)
+    Pξ_abs = deserialize(Pξ_absname)
+    ymax = deserialize(ymaxname)
 
     figname = "./FD_SBPM-2D-waveguide-PML.png"
-    ymax = maximum(Pξ_abs)*1.05
-    serialize("./correlation_function_abs_max.dat", ymax)
-    plot_withlayout(x, z, Efield, n0, Δn, n, Eline, Pz, ξ, ξv, ξvind, peakh, Pξ_abs, figname; ymax=ymax)
+    plot_with_corr(x, z, Efield, n0, Δn, n, Eline, 
+                    Pz, ξ, ξv, ξvind, peakh, Pξ_abs, figname; ymax=ymax)
 
     mode_num = 3
-    Efield = deserialize("./Efield.dat")
-    ξv = deserialize("./xiv_Efield.dat")
-    ymax = deserialize("./correlation_function_abs_max.dat")
-    mode_transverse_profiles = get_h(Lx, Lz, α, mode_num, Efield, n0, Δn, n , λ, ξv; ymax=ymax)
+    mode_transverse_profiles = get_h(Lx, Lz, α, mode_num, 
+                                        Efield, nt, n0, Δn, n, 
+                                        λ, ξv; ymax=ymax)
     # mode_profiles = get_h(Lx, Lz, α, mode_num, Efield, n0, Δn, n , λ, ξv)
     serialize("./mode_transverse_profiles.dat", mode_transverse_profiles)
 
-    ξv = deserialize("./xiv_Efield.dat")
     mode_transverse_profiles = deserialize("./mode_transverse_profiles.dat")
     plot_mode(x, mode_transverse_profiles, ξv, β)
     println("Simulation finished.")

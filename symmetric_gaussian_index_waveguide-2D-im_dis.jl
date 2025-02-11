@@ -37,7 +37,7 @@ function main()
  
     α = 0.5001
 
-    Efield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, Eline; im_dis=true)
+    Efield = get_Efield(x, z, nt, n, λ, α, Eline; im_dis=true)
 
     savedir = "./im-dis-FD_SBPM_2D-PML/"
     serialize(savedir*"x.dat", x)
