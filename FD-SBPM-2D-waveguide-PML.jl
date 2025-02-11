@@ -12,7 +12,6 @@ const nm = 10^-9
 
 export get_gaussian_input, get_step_index_profile, get_symmetric_Gaussian_index_profile,
         _to_next, _pml, get_Efield, correlation_method, plot_field, plot_with_corr, get_h, plot_mode, im_dis
-        _to_next, _pml, get_Efield, correlation_method, plot_field, plot_with_corr, get_h, plot_mode, im_dis
 
 function get_gaussian_input(
     x::AbstractVector, 
@@ -201,7 +200,7 @@ function get_Efield(
     n::Matrix{ComplexF64}, 
     λ::Number, 
     α::Number, 
-    input::Vector{ComplexF64}; im_dis=false
+    input::Vector{ComplexF64};
     )::Matrix{ComplexF64}
 
     npml = 10
@@ -316,8 +315,6 @@ function plot_with_corr(
     Pξ_abs::AbstractVector, 
     figname::String; ymax::Number=Inf, savedir="./")
 
-    @show typeof(Pz)
- 
     profileplots = plot_field(x, z, field, n0, Δn, n, input, figname; 
                                 savedir=savedir, save=false)
     
@@ -342,15 +339,15 @@ function plot_with_corr(
                             # annotations=anno)
                         )
 
-    @show typeof(profileplots)
-    @show typeof(Pfz_anal)
+    # @show typeof(profileplots)
+    # @show typeof(Pfz_anal)
     # @show typeof([corr, Pfz_anal])
     # layout = @layout [a b c; d e{1,2}]
     # layout = grid(2, 3; widths=[1, 1, 2], heights=[0.5, 0.5])
 
     push!(profileplots, Pz_plot)
     push!(profileplots, Pfz_anal)
-    @show typeof(profileplots)
+    # @show typeof(profileplots)
 
     layout = @layout [grid(1,3); b{0.333w} c{0.666w}]
     plot(profileplots..., layout=layout, size=(1400, 1000))

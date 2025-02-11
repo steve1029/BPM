@@ -55,29 +55,15 @@ function main()
  
     α = 0.5001
 
-<<<<<<< HEAD
-    Efield = get_Efield(x, z, nt, n, λ, α, Eline; im_dis=true)
-=======
-    Efield = get_Efield(x, z, neff, n, λ, α, Eline)
-    # trialξ = k0 * (n0 + Δn*0.6)
-    # trialξ = k0 * n0 + 111/um
-    # @show trialξ*um
-    # trialξ = 0
-    # psiτ = im_dis(Efield, z, β, trialξ)
->>>>>>> im-dis
+    Efield = get_Efield(x, z, neff, n, λ, α, Eline;)
+
+    nametag = "Efield"
 
     serialize(savedir*"x.dat", x)
     serialize(savedir*"z.dat", z)
-    serialize(savedir*"Efield.dat", Efield)
+    serialize(savedir*nametag, Efield)
 
-<<<<<<< HEAD
-=======
-    figname = "im_dis-Efield.png"
-    plots = plot_field(x, abs.(z), Efield, n0, Δn, n, Eline, figname; savedir=savedir, save=true)
-
->>>>>>> im-dis
     #=
-    nametag = "Efield"
     Pz, ξ, ξvind, ξv, peakh, Pξ_abs= correlation_method(Efield, dx, dz)
 
     @show ξv*um
@@ -102,6 +88,7 @@ function main()
     mode_transverse_profiles = deserialize(savedir*"mode_transverse_profiles.dat")
     plot_mode(x, mode_transverse_profiles, ξv, β)
     =#
+
     println("Simulation finished.")
 end
 
