@@ -5,19 +5,18 @@ using LinearAlgebra
 using FFTW
 using Peaks
 using Profile
-using Serialization
 using Printf
 
 const um = 10^-6
 const nm = 10^-9
 
 export get_gaussian_input, get_step_index_profile, get_symmetric_Gaussian_index_profile,
-        _to_next, _pml, get_Efield, correlation_method, plot_withlayout, get_h, plot_mode
+        _to_next, _pml, get_Efield, correlation_method, plot_field, plot_with_corr, get_h, plot_mode, im_dis
 
 function get_gaussian_input(
     x::AbstractVector, 
-    xshift::Float64, 
-    w::Float64)::Vector
+    xshift::Number, 
+    w::Number)::Vector
     Eline = exp.(-((x.-xshift).^2 ./ (w^2))) .+ 0im
     return Eline
 end
@@ -25,10 +24,10 @@ end
 function get_step_index_profile(
     Nx::Int, 
     Nz::Int,
-    slabthick::Float64,
-    cladthick::Float64,
-    slabindex::Float64,
-    cladindex::Float64
+    slabthick::Number,
+    cladthick::Number,
+    slabindex::Number,
+    cladindex::Number
     )::Matrix
     
     n = ones(ComplexF64, Nx, Nz)
@@ -45,9 +44,9 @@ end
 
 function get_symmetric_Gaussian_index_profile(
     x,
-    n0::Float64,
-    σ::Float64,
-    Δn::Float64,
+    n0::Number,
+    σ::Number,
+    Δn::Number,
     Nx::Int64, 
     Nz::Int64)::Matrix
     
@@ -67,11 +66,11 @@ function _to_next
 """
 function _to_next(
     step::Int,
-    α::Float64,
-    λ::Float64,
-    dx::Float64, 
-    dz::Float64, 
-    n0::Float64,
+    α::Number,
+    λ::Number,
+    dx::Number, 
+    dz::Number, 
+    nt::Number,
     n::Matrix{ComplexF64}, 
     Tm::Matrix{ComplexF64}, 
     Tp::Matrix{ComplexF64}, 
@@ -79,9 +78,49 @@ function _to_next(
     E::Vector{ComplexF64}; im_dis=false
     )::Vector{ComplexF64}
 
-    if im_dis == true
-        dz = 1im*dz
-    end
+    k0 = 2*π / λ
+    nd = n[:,step].^2 .- nt^2
+
+    b = (2*α.* R[:, step] /dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*nt/dz)
+    a = (-α/dx^2) .* Tm[:, step]
+    c = (-α/dx^2) .* Tp[:, step]
+    A = diagm(-1=>a, 0=>b, 1=>c)
+
+    D = (1-α)*k0^2 .* nd .- (2*(1-α)/dx^2 .* R[:, step]) .+ (2im*k0*nt/dz)
+    above = ((1-α) / dx^2) .* Tp[:, step]
+    below = ((1-α) / dx^2) .* Tm[:, step]
+
+    B = diagm(-1=>below, 0=>D, 1=>above)
+
+    r = B * E
+    newE = A \ r
+
+    return newE
+end
+
+"""
+function _to_next_imdis
+    In this function, we used 'exp(i(wt-kr))' notation.
+
+# Arguments
+# Returns
+# Example
+"""
+function _to_next_imdis(
+    step::Int,
+    α::Number,
+    λ::Number,
+    dx::Number, 
+    dz::Number, 
+    n0::Number,
+    n::Matrix{ComplexF64}, 
+    Tm::Matrix{ComplexF64}, 
+    Tp::Matrix{ComplexF64}, 
+    R::Matrix{ComplexF64}, 
+    E::Vector{ComplexF64};
+    )::Vector{ComplexF64}
+
+    dz = 1im*dz
 
     k0 = 2*π / λ
     nd = n[:,step].^2 .- n0^2
@@ -103,6 +142,7 @@ function _to_next(
     return newE
 end
 
+
 """
 function _pml
 
@@ -116,9 +156,9 @@ function _pml(
     Nx::Int64,
     Nz::Int64,
     npml::Int64,
-    dx::Float64,
+    dx::Number,
     np::Matrix{ComplexF64}, 
-    λ::Float64)::Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, Matrix{ComplexF64}}
+    λ::Number)::Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, Matrix{ComplexF64}}
 
     rc0 = 1.e-16
     μ0 = 4*π*10^-7
@@ -154,21 +194,19 @@ function _pml(
 end
 
 function get_Efield(
-    Nx::Int, 
-    Nz::Int, 
-    Lx::Float64, 
-    Lz::Float64, 
-    n0::Float64, 
+    x::AbstractVector,
+    z::AbstractVector,
+    nt::Number, 
     n::Matrix{ComplexF64}, 
-    λ::Float64, 
-    α::Float64, 
+    λ::Number, 
+    α::Number, 
     input::Vector{ComplexF64}; im_dis=false
     )::Matrix{ComplexF64}
 
-   npml = 10
+    npml = 10
 
-    x = range(-Lx/2, Lx/2; length=Nx)
-    z = range(0, Lz; length=Nz)
+    Nx = length(x) 
+    Nz = length(z)
 
     dx = step(x)
     dz = step(z)
@@ -179,7 +217,7 @@ function get_Efield(
     Efield[:,1] = input
 
     for k in 2:Nz
-        Efield[:,k] = _to_next(k, α, λ, dx, dz, n0, n, Tm, Tp, R, Efield[:,k-1]; im_dis=im_dis)
+        Efield[:,k] = _to_next(k, α, λ, dx, dz, nt, n, Tm, Tp, R, Efield[:,k-1];)
     end
 
     return Efield
@@ -191,7 +229,7 @@ function correlation_method
     Note that Pf is not a function of ξ.
     Note that since fftfreq returns frequency, we need 2*π to make angular freq.
 """
-function correlation_method(Efield::AbstractMatrix, dx::Float64, dz::Float64)
+function correlation_method(Efield::AbstractMatrix, dx::Number, dz::Number)
 
     Nz = size(Efield, 2)
     Pz = zeros(ComplexF64, Nz)
@@ -219,24 +257,17 @@ function correlation_method(Efield::AbstractMatrix, dx::Float64, dz::Float64)
     return Pz, ξ, ξvind, ξv, peakh, Pξ_abs 
 end
 
-function plot_withlayout(
+function plot_field(
     x::AbstractVector, 
     z::AbstractVector, 
     field::AbstractMatrix, 
-    n0::Float64,
-    Δn::Float64,
+    n0::Number,
+    Δn::Number,
     n::Matrix{ComplexF64}, 
     input::AbstractVector, 
-    corr::AbstractVector, 
-    ξ::AbstractVector, 
-    ξv::AbstractVector, 
-    ξvind::AbstractVector, 
-    peakh::AbstractVector, 
-    Pξ_abs::AbstractVector, 
-    figname::String; ymax::Number=Inf, savedir=savedir)
-
+    figname::String; savedir="./", save=true)
+    
     intensity = abs2.(field)
-    anno = [(xi, h, "ξv=$xi") for (xi, h) in zip(ξv, peakh)]
     input_abs = (abs.(input).^2) 
     input = plot(x/um, input_abs/maximum(input_abs), 
                             label="input beam", 
@@ -252,44 +283,90 @@ function plot_withlayout(
                     clim=(n0, n0+Δn), 
                     xlabel="z (μm)", ylabel="x (μm)", zlabel="index", 
                     title="Refractive index")
-    normed_corr = real.(corr) / maximum(real.(corr))
-    Pz = plot(z, normed_corr,
-                    xlabel="z (μm)", 
-                    ylabel="x (μm)",
-                    title="Correlation function")
-            # Pfz = plot(ξ*um, modeintensity, xlim=(-0.2, 0.2), yscale=:log10)
-    normed_Pξ_abs = Pξ_abs / maximum(Pξ_abs)
+
+    plots = [input, hm1, hm2]
+    layout = @layout [grid(1,3)]
+    plot(plots..., layout=layout, size=(1400, 500))
+
+    if save == true
+        savefig(savedir*figname)
+    end
+
+    return plots
+end
+
+
+function plot_with_corr(
+    x::AbstractVector,
+    z::AbstractVector, 
+    field::AbstractMatrix, 
+    n0::Number,
+    Δn::Number,
+    n::Matrix{ComplexF64}, 
+    input::AbstractVector, 
+    Pz::AbstractVector, 
+    ξ::AbstractVector, 
+    ξv::AbstractVector, 
+    ξvind::AbstractVector, 
+    peakh::AbstractVector, 
+    Pξ_abs::AbstractVector, 
+    figname::String; ymax::Number=Inf, savedir="./")
+
+    @show typeof(Pz)
+ 
+    profileplots = plot_field(x, z, field, n0, Δn, n, input, figname; 
+                                savedir=savedir, save=false)
+    
+    normed_Pξ_abs = Pξ_abs ./ maximum(Pξ_abs)
+    normed_Pz = real.(Pz) ./ maximum(real.(Pz))
+    # anno = [(xi, h, "ξv=$xi") for (xi, h) in zip(ξv, peakh)]
+    Pz_plot = plot(z, normed_Pz, 
+                    dpi=300,
+                    xlabel="z (μm)",
+                    ylabel="normed_Re(Pz)",
+                    title="Correlation function",
+                    label="P(z)",
+                    # ylim=(0,1)
+                    )
     Pfz_anal = plotpeaks(ξ*um, normed_Pξ_abs; 
                             peaks=ξvind, 
                             prominences=true, widths=true, 
                             xlim=(-0.2, 0.2),
-                            ylim=(0,ymax),
+                            # ylim=(0,ymax),
                             yscale=:log10,  
                             # ylim=(10^-34, -10^-1),
-                            annotations=anno)
+                            # annotations=anno)
+                        )
 
-    plots = [input, hm1, hm2, Pz, Pfz_anal]
+    @show typeof(profileplots)
+    @show typeof(Pfz_anal)
+    # @show typeof([corr, Pfz_anal])
     # layout = @layout [a b c; d e{1,2}]
     # layout = grid(2, 3; widths=[1, 1, 2], heights=[0.5, 0.5])
- 
+
+    push!(profileplots, Pz_plot)
+    push!(profileplots, Pfz_anal)
+    @show typeof(profileplots)
+
     layout = @layout [grid(1,3); b{0.333w} c{0.666w}]
-    plot(plots..., layout=layout, size=(1400, 1000))
+    plot(profileplots..., layout=layout, size=(1400, 1000))
     savefig(savedir*figname)
 end
 
 function get_h(
-    Lx::Float64,
-    Lz::Float64,
-    α::Float64,
+    Lx::Number,
+    Lz::Number,
+    α::Number,
     mode_num::Int,
     Efield::Matrix{ComplexF64},
-    n0::Float64,
-    Δn::Float64,
+    nt::Number,
+    n0::Number,
+    Δn::Number,
     n::Matrix{ComplexF64},
-    λ::Float64,
-    ξv::Vector{Float64};
+    λ::Number,
+    ξv::AbstractVector;
     ymax::Number=Inf
-    )::Vector
+    )::AbstractVector
 
     Nx = size(Efield, 1)
     Nz = size(Efield, 2)
@@ -337,20 +414,20 @@ function get_h(
                 # h = h / maximum(abs.(h))
 
                 nametag = nametag * "$(v-1)"
-                @printf("mode %1d subtracted from E field to get mode %1d, ξv=%8.6f, \
-                            intgration limit=%7.3f um. Got %s.\n", 
+                @printf("mode %1d subtracted from E field to get mode %1d, \
+                            ξv=%8.6f, intgration limit=%7.3f um. Got %s.\n", 
                             (v-1), (μ-1), -ξv[μ]*um, lim/um, nametag
                             )
                 # println("h$(v-1) calculated.")
                 # if iter_num == (mode_num-1)
                 # end
 
-                hfield = get_Efield(Nx, Nz, Lx, Lz, n0, n, λ, α, h)
+                hfield = get_Efield(x, z, nt, n, λ, α, h)
                 push!(hfields, hfield)
 
                 figname = "./$nametag-after-propagation.png"
                 corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = correlation_method(hfield, dx, dz)
-                plot_withlayout(x, z, hfield, n0, Δn, n, h, corr_h, 
+                plot_with_corr(x, z, hfield, n0, Δn, n, h, corr_h, 
                                 ξ_h, ξv_h, ξvind_h, peakh_h, Pξ_abs_h, figname; ymax=ymax)
 
                 iter_num += 1
@@ -368,7 +445,7 @@ function plot_mode(
     x::AbstractVector,
     mode_profiles::AbstractVecOrMat{T},
     ξv::AbstractVector,
-    β::Float64
+    β::Number
     )::Int where T
 
     num = length(mode_profiles)
@@ -400,4 +477,21 @@ function plot_mode(
     return 0
 end
 
+function im_dis(
+    Efield::AbstractMatrix{ComplexF64}, 
+    z::AbstractVector, 
+    β::Number,
+    trialξ::Number)
+
+    Nx = size(Efield, 1)
+    dz = step(z)
+    τ = 1im*dz
+    zphase = exp.(z.*trialξ) ./ exp.(-1im.*z.*(trialξ+β))
+    zphase_mat = repeat(transpose(zphase), Nx, 1)
+
+    psiτ = Efield .* zphase_mat
+
+    return psiτ
 end
+
+end # module end.
