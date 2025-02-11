@@ -12,6 +12,7 @@ const nm = 10^-9
 
 export get_gaussian_input, get_step_index_profile, get_symmetric_Gaussian_index_profile,
         _to_next, _pml, get_Efield, correlation_method, plot_field, plot_with_corr, get_h, plot_mode, im_dis
+        _to_next, _pml, get_Efield, correlation_method, plot_field, plot_with_corr, get_h, plot_mode, im_dis
 
 function get_gaussian_input(
     x::AbstractVector, 
@@ -204,7 +205,10 @@ function get_Efield(
     )::Matrix{ComplexF64}
 
     npml = 10
+    npml = 10
 
+    Nx = length(x) 
+    Nz = length(z)
     Nx = length(x) 
     Nz = length(z)
 
