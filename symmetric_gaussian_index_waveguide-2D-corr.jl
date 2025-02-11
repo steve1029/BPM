@@ -39,7 +39,7 @@ function main()
     α = 0.5001
 
     target = 0.12
-    nt = target*um/k0 + n0
+    nt = target/k0 + n0
 
     nametag = "Efield"
     Pzname = "Pz_$nametag.dat"
