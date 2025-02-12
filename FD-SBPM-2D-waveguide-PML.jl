@@ -10,8 +10,11 @@ using Printf
 const um = 10^-6
 const nm = 10^-9
 
-export get_gaussian_input, get_step_index_profile, get_symmetric_Gaussian_index_profile,
-        _to_next, _pml, get_Efield, correlation_method, plot_field, plot_with_corr, get_h, plot_mode, im_dis
+export get_gaussian_input, get_step_index_profile, 
+        get_symmetric_Gaussian_index_profile,
+        _to_next, _pml, get_Efield, correlation_method, 
+        plot_field, plot_with_corr, 
+        get_h, plot_mode, get_mode_profiles_im_dis
 
 function get_gaussian_input(
     x::AbstractVector, 
@@ -56,92 +59,42 @@ function get_symmetric_Gaussian_index_profile(
     return n
 end
 
-"""
-function _to_next
-    In this function, we used 'exp(i(wt-kr))' notation.
-
-# Arguments
-# Returns
-# Example
-"""
-function _to_next(
-    step::Int,
-    α::Number,
-    λ::Number,
-    dx::Number, 
-    dz::Number, 
-    nt::Number,
+function get_Efield(
+    x::AbstractVector,
+    z::AbstractVector,
+    nt::Number, 
     n::Matrix{ComplexF64}, 
-    Tm::Matrix{ComplexF64}, 
-    Tp::Matrix{ComplexF64}, 
-    R::Matrix{ComplexF64}, 
-    E::Vector{ComplexF64}; im_dis=false
-    )::Vector{ComplexF64}
+    λ::Number, 
+    α::Number, 
+    input::Vector{ComplexF64};
+    pml = true
+    )::Matrix{ComplexF64}
 
-    k0 = 2*π / λ
-    nd = n[:,step].^2 .- nt^2
+    npml = 10
 
-    b = (2*α.* R[:, step] /dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*nt/dz)
-    a = (-α/dx^2) .* Tm[:, step]
-    c = (-α/dx^2) .* Tp[:, step]
-    A = diagm(-1=>a, 0=>b, 1=>c)
+    Nx = length(x) 
+    Nz = length(z)
 
-    D = (1-α)*k0^2 .* nd .- (2*(1-α)/dx^2 .* R[:, step]) .+ (2im*k0*nt/dz)
-    above = ((1-α) / dx^2) .* Tp[:, step]
-    below = ((1-α) / dx^2) .* Tm[:, step]
+    dx = step(x)
+    dz = step(z)
 
-    B = diagm(-1=>below, 0=>D, 1=>above)
+    Efield = zeros(ComplexF64, Nx, Nz)
+    Efield[:,1] = input
 
-    r = B * E
-    newE = A \ r
+    if pml == false
+        Tm = ones(eltype(Efield), Nx-1, Nz)
+        Tp = ones(eltype(Efield), Nx-1, Nz)
+        R  = ones(eltype(Efield), Nx, Nz)
+    else
+        Tm, Tp, R = _pml(Nx, Nz, npml, dx, n, λ)
+    end
 
-    return newE
+    for step in 2:Nz
+        Efield[:,step] = _to_next(step, α, λ, dx, dz, nt, n, Tm, Tp, R, Efield[:,step-1];)
+    end
+
+    return Efield
 end
-
-"""
-function _to_next_imdis
-    In this function, we used 'exp(i(wt-kr))' notation.
-
-# Arguments
-# Returns
-# Example
-"""
-function _to_next_imdis(
-    step::Int,
-    α::Number,
-    λ::Number,
-    dx::Number, 
-    dz::Number, 
-    n0::Number,
-    n::Matrix{ComplexF64}, 
-    Tm::Matrix{ComplexF64}, 
-    Tp::Matrix{ComplexF64}, 
-    R::Matrix{ComplexF64}, 
-    E::Vector{ComplexF64};
-    )::Vector{ComplexF64}
-
-    dz = 1im*dz
-
-    k0 = 2*π / λ
-    nd = n[:,step].^2 .- n0^2
-
-    b = (2*α.* R[:, step] /dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*n0/dz)
-    a = (-α/dx^2) .* Tm[:, step]
-    c = (-α/dx^2) .* Tp[:, step]
-    A = diagm(-1=>a, 0=>b, 1=>c)
-
-    D = (1-α)*k0^2 .* nd .- (2*(1-α)/dx^2 .* R[:, step]) .+ (2im*k0*n0/dz)
-    above = ((1-α) / dx^2) .* Tp[:, step]
-    below = ((1-α) / dx^2) .* Tm[:, step]
-
-    B = diagm(-1=>below, 0=>D, 1=>above)
-
-    r = B * E
-    newE = A \ r
-
-    return newE
-end
-
 
 """
 function _pml
@@ -193,38 +146,50 @@ function _pml(
     return Tm, Tp, R
 end
 
-function get_Efield(
-    x::AbstractVector,
-    z::AbstractVector,
-    nt::Number, 
+
+
+"""
+function _to_next
+    In this function, we used 'exp(i(wt-kr))' notation.
+
+# Arguments
+# Returns
+# Example
+"""
+function _to_next(
+    step::Int,
+    α::Number,
+    λ::Number,
+    dx::Number, 
+    dz::Number, 
+    nt::Number,
     n::Matrix{ComplexF64}, 
-    λ::Number, 
-    α::Number, 
-    input::Vector{ComplexF64};
-    )::Matrix{ComplexF64}
+    Tm::Matrix{ComplexF64}, 
+    Tp::Matrix{ComplexF64}, 
+    R::Matrix{ComplexF64}, 
+    E::Vector{ComplexF64};
+    )::Vector{ComplexF64}
 
-    npml = 10
-    npml = 10
+    k0 = 2*π / λ
+    nd = n[:,step].^2 .- nt^2
 
-    Nx = length(x) 
-    Nz = length(z)
-    Nx = length(x) 
-    Nz = length(z)
+    b = (2*α.* R[:, step] /dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*nt/dz)
+    a = (-α/dx^2) .* Tm[:, step]
+    c = (-α/dx^2) .* Tp[:, step]
+    A = diagm(-1=>a, 0=>b, 1=>c)
 
-    dx = step(x)
-    dz = step(z)
+    D = (1-α)*k0^2 .* nd .- (2*(1-α)/dx^2 .* R[:, step]) .+ (2im*k0*nt/dz)
+    above = ((1-α) / dx^2) .* Tp[:, step]
+    below = ((1-α) / dx^2) .* Tm[:, step]
 
-    Tm, Tp, R = _pml(Nx, Nz, npml, dx, n, λ)
+    B = diagm(-1=>below, 0=>D, 1=>above)
 
-    Efield = zeros(ComplexF64, Nx, Nz)
-    Efield[:,1] = input
+    r = B * E
+    newE = A \ r
 
-    for k in 2:Nz
-        Efield[:,k] = _to_next(k, α, λ, dx, dz, nt, n, Tm, Tp, R, Efield[:,k-1];)
-    end
-
-    return Efield
+    return newE
 end
+
 
 """
 function correlation_method
@@ -272,22 +237,22 @@ function plot_field(
     
     intensity = abs2.(field)
     input_abs = (abs.(input).^2) 
-    input = plot(x/um, input_abs/maximum(input_abs), 
+    inputplot = plot(x./um, input_abs./maximum(input_abs), 
                             label="input beam", 
                             xlabel="Normalized Intensity",
                             ylabel="x (μm)",
                             lw=1.5, dpi=300,)
-    hm1 = heatmap(z, x/um, intensity, 
+    hm1 = heatmap(abs.(z)./um, x./um, intensity, 
                     dpi=300, clim=(0,1), c=:thermal, 
                     xlabel="z (μm)", ylabel="x (μm)", zlabel="Intensity", 
                     title="Straight waveguide")
-    hm2 = heatmap(z, x/um, real(n), 
+    hm2 = heatmap(abs.(z)./um, x./um, real(n), 
                     dpi=300, 
                     clim=(n0, n0+Δn), 
                     xlabel="z (μm)", ylabel="x (μm)", zlabel="index", 
                     title="Refractive index")
 
-    plots = [input, hm1, hm2]
+    plots = [inputplot, hm1, hm2]
     layout = @layout [grid(1,3)]
     plot(plots..., layout=layout, size=(1400, 500))
 
@@ -478,21 +443,99 @@ function plot_mode(
     return 0
 end
 
-function im_dis(
-    Efield::AbstractMatrix{ComplexF64}, 
-    z::AbstractVector, 
-    β::Number,
-    trialξ::Number)
+function get_mode_profiles_im_dis(
+    x::AbstractVector,
+    τ::AbstractVector,
+    uline::AbstractVector,
+    n::AbstractMatrix, 
+    ntrial::Number,
+    n0::Number,
+    λ::Number,
+    α::Number,
+    mode_num::Int;
+    figsave = true,
+    savedir = "./"
+    )
 
-    Nx = size(Efield, 1)
-    dz = step(z)
-    τ = 1im*dz
-    zphase = exp.(z.*trialξ) ./ exp.(-1im.*z.*(trialξ+β))
-    zphase_mat = repeat(transpose(zphase), Nx, 1)
+    mode_profiles = []
 
-    psiτ = Efield .* zphase_mat
+    dx = step(x)
+    dτ = step(τ)
+    k = 2*π / λ
+    savedir = savedir
+    figname = "ntrial.png"
 
-    return psiτ
-end
+    for mode in 1:mode_num
+
+        ufield = get_Efield(x, τ, ntrial, n, λ, α, uline; pml=false)
+        cf = ufield[:,end]
+
+        amp = real(sqrt((sum(cf.*conj.(cf))*dx)))
+        f = cf ./ amp
+        # f = cf ./ maximum(real.(cf)) 
+        # f = cf
+        a = real(sum(uline .* conj.(f)) / sum(abs2.(f)))
+        @show amp
+        @show a
+
+        push!(mode_profiles, f)
+        plot_im_dis(x, τ, uline, ufield, cf, figname; 
+                    savedir=savedir,
+                    figsave=figsave)
+
+        weightedξv = real((log(sum(cf)*dx) - log(sum(ufield[:,end-1])*dx))*1im/dτ)
+        weightedβ = weightedξv + n0*k
+
+        figname = "output-is-mode-$(mode-1).png"
+        uline = uline .- (a.*f)
+        ntrial = weightedβ/k
+
+        st = @sprintf("weightedξv=%9.6f, weightedβ=%9.6f, ntrial=%9.6f, mode=%2d\n", 
+                        weightedξv*um, weightedβ*um, ntrial, mode)
+        print(st)
+
+    end # for-loop end.
+
+    return mode_profiles
+end # function end.
+
+function plot_im_dis(x, τ, uline, ufield, af,
+    figname;
+    figsave=true,
+    savedir="./",
+    )
+
+    intensity = abs2.(ufield)
+    input_abs = (abs.(uline).^2) 
+
+    normed_input_abs = input_abs./maximum(input_abs)
+    iplot = plot(x./um, input_abs, 
+                            label="input beam", 
+                            title="Normalized input",
+                            xlabel="z (μm)",
+                            ylabel="x (μm)",
+                            lw=1.5, dpi=300,)
+
+    Eplot = heatmap(abs.(τ)./um, x./um, intensity, 
+                    dpi=300, clim=(0,1), c=:thermal, 
+                    xlabel="z (μm)", ylabel="x (μm)", zlabel="Intensity", 
+                    title="Straight waveguide")
+
+    fplot = plot(x./um, real.(af), 
+                            label="f(x,∞)", 
+                            title="Output",
+                            xlabel="τ",
+                            ylabel="x (μm)",
+                            lw=1.5, dpi=300,)
+
+    plots = [iplot, Eplot, fplot]
+    layout = @layout [grid(1,3)]
+    plot(plots..., layout=layout, size=(1400, 500))
+
+    if figsave == true
+        savefig(savedir*figname)
+    end
+
+end # function end.
 
 end # module end.
