@@ -17,10 +17,10 @@ function main()
     nm = 10^-9
 
     Nx = 400
-    Nz = 400
+    Nz = 12
 
     Lx = 20*um
-    Lz = 300*um
+    Lz = 120*um
 
     x = range(-Lx/2, Lx/2; length=Nx)
     z = range(0, Lz; length=Nz)
@@ -40,25 +40,25 @@ function main()
 
     λ = 850*nm
     k0 = 2*π / λ
-    Δntrial = 0.015
-    ntrial = n0 + Δntrial
+    ntrial = 1.457
+    Δntrial = ntrial - n0 
     Δβ = Δntrial*k0
+    α = 0.5001
 
     @show ntrial
     @assert abs.(dz) < (λ/2 / n0 / Δn)
 
     w = 2*um
     xshift = 1*um
-    Eline = get_gaussian_input(x, xshift, w)
- 
-    α = 0.5001
+    mode = 1
+    # Eline = get_gaussian_input(x, xshift, w)
+    Eline = deserialize(savedir*"newinput_no_mode_$(mode-1).dat")
+    newinput = 
+        get_mode_profiles_im_dis(x, τ, Eline, n, ntrial, λ, α, 5; 
+                                    mode=mode,
+                                    savedir=savedir)
 
-    nametag = "Efield"
-
-    mode_transverse_profiles = 
-        get_mode_profiles_im_dis(x, τ, Eline, n, ntrial, 
-                n0, λ, α, 4; savedir=savedir)
-
+    serialize(savedir*"newinput_no_mode_$mode.dat", newinput)
     serialize(savedir*"x.dat", x)
     serialize(savedir*"z.dat", z)
 

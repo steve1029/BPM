@@ -449,57 +449,51 @@ function get_mode_profiles_im_dis(
     uline::AbstractVector,
     n::AbstractMatrix, 
     ntrial::Number,
-    n0::Number,
     λ::Number,
     α::Number,
-    mode_num::Int;
+    iternum::Number;
+    mode = 0,
     figsave = true,
     savedir = "./"
     )
-
-    mode_profiles = []
 
     dx = step(x)
     dτ = step(τ)
     k = 2*π / λ
     savedir = savedir
-    figname = "ntrial.png"
+    weightedβ = ntrial*k
+    newinput = uline
+    # Get mode 0.
+    for i in 1:iternum
+        ufield = get_Efield(x, τ, ntrial, n, λ, α, newinput; pml=false)
+        af = ufield[:,end]
 
-    for mode in 1:mode_num
+        weightedξv = real((log(sum(af)*dx) - log(sum(ufield[:,end-1])*dx))*1im/dτ)
+        weightedβ += weightedξv
 
-        ufield = get_Efield(x, τ, ntrial, n, λ, α, uline; pml=false)
-        cf = ufield[:,end]
-
-        amp = real(sqrt((sum(cf.*conj.(cf))*dx)))
-        f = cf ./ amp
-        # f = cf ./ maximum(real.(cf)) 
-        # f = cf
-        a = real(sum(uline .* conj.(f)) / sum(abs2.(f)))
-        @show amp
-        @show a
-
-        push!(mode_profiles, f)
-        plot_im_dis(x, τ, uline, ufield, cf, figname; 
+        figname = "get_mode_$mode-trial_$i.png"
+        plot_im_dis(x, τ, newinput, ufield, af, ntrial, figname; 
                     savedir=savedir,
                     figsave=figsave)
 
-        weightedξv = real((log(sum(cf)*dx) - log(sum(ufield[:,end-1])*dx))*1im/dτ)
-        weightedβ = weightedξv + n0*k
-
-        figname = "output-is-mode-$(mode-1).png"
-        uline = uline .- (a.*f)
-        ntrial = weightedβ/k
-
-        st = @sprintf("weightedξv=%9.6f, weightedβ=%9.6f, ntrial=%9.6f, mode=%2d\n", 
-                        weightedξv*um, weightedβ*um, ntrial, mode)
+        st = @sprintf("n0=%9.6f, weightedξv/k=%9.6f, redefined n =%9.6f\n", 
+                        ntrial, weightedξv/k, weightedβ/k)
         print(st)
 
-    end # for-loop end.
+        ntrial = weightedβ/k
+        newinput .-= af
+    end
 
-    return mode_profiles
+    return newinput
 end # function end.
 
-function plot_im_dis(x, τ, uline, ufield, af,
+function plot_im_dis(
+    x, 
+    τ, 
+    uline, 
+    ufield, 
+    af,
+    ntrial,
     figname;
     figsave=true,
     savedir="./",
@@ -511,23 +505,26 @@ function plot_im_dis(x, τ, uline, ufield, af,
     normed_input_abs = input_abs./maximum(input_abs)
     iplot = plot(x./um, input_abs, 
                             label="input beam", 
-                            title="Normalized input",
+                            title="Input",
                             xlabel="z (μm)",
                             ylabel="x (μm)",
                             lw=1.5, dpi=300,)
 
     Eplot = heatmap(abs.(τ)./um, x./um, intensity, 
-                    dpi=300, clim=(0,1), c=:thermal, 
+                    dpi=300, 
+                    clim=(0,Inf), 
+                    c=:thermal, 
                     xlabel="z (μm)", ylabel="x (μm)", zlabel="Intensity", 
                     title="Straight waveguide")
 
+    nst = @sprintf("ntrial=%8.6f", ntrial)
     fplot = plot(x./um, real.(af), 
                             label="f(x,∞)", 
-                            title="Output",
+                            title="Output,"*nst,
                             xlabel="τ",
                             ylabel="x (μm)",
                             lw=1.5, dpi=300,)
-
+    # annotate!(fplot, 5, -0.2, text(nst, 12, :blue))
     plots = [iplot, Eplot, fplot]
     layout = @layout [grid(1,3)]
     plot(plots..., layout=layout, size=(1400, 500))
