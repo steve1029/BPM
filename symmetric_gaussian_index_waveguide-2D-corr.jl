@@ -50,7 +50,6 @@ function main()
     peakhname = "peakh_$nametag.dat"
     Pξ_absname = "Pxi_abs_$nametag.dat"
 
-    #=
     Efield = get_Efield(x, z, nt, n, λ, α, Eline)
 
     serialize("x.dat", x)
@@ -72,7 +71,6 @@ function main()
     serialize(ymaxname, ymax)
     serialize(peakhname, peakh)
     serialize(Pξ_absname, Pξ_abs)
-    =#
 
     x = deserialize("./x.dat")
     z = deserialize("./z.dat")
