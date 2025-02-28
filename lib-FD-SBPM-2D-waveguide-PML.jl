@@ -36,12 +36,14 @@ function get_step_index_profile(
     lowercladthick::Number,
     lowercladindex::Number
     )::Matrix
+
+    centerindex = Int(Nx/2) + center/dx
     
     n = ones(ComplexF64, Nx, Nz)
-    bcm = Int(round(center/dx - slabthick/2/dx - lowercladthick/2/dx))
-    bsm = Int(round(center/dx - slabthick/2/dx))
-    bsp = Int(round(center/dx + slabthick/2/dx))
-    bcp = Int(round(center/dx + slabthick/2/dx + uppercladthick/2/dx))
+    bcm = Int(round(centerindex - slabthick/2/dx - lowercladthick/2/dx))
+    bsm = Int(round(centerindex - slabthick/2/dx))
+    bsp = Int(round(centerindex + slabthick/2/dx))
+    bcp = Int(round(centerindex + slabthick/2/dx + uppercladthick/2/dx))
     n[bcm:bsm,:] .= lowercladindex
     n[bsm:bsp,:] .= slabindex 
     n[bsp:bcp,:] .= uppercladindex
@@ -274,6 +276,7 @@ function plot_with_corr(
     field::AbstractMatrix, 
     n0::Number,
     Δn::Number,
+    λ::Number,
     n::Matrix{ComplexF64}, 
     input::AbstractVector, 
     Pz::AbstractVector, 
@@ -301,7 +304,7 @@ function plot_with_corr(
     Pfz_anal = plotpeaks(ξ*um, normed_Pξ_abs; 
                             peaks=ξvind, 
                             prominences=true, widths=true, 
-                            xlim=(-0.2, 0.2),
+                            # xlim=(-0.2, 0.2),
                             # ylim=(0,ymax),
                             yscale=:log10,  
                             # ylim=(10^-34, -10^-1),
@@ -356,6 +359,10 @@ function get_h(
     # roll back the sign of ξv.
     ξv = -ξv
 
+    k0 = 2*π/λ
+    β = n0*k0
+    neff = (β.+ξv).*λ./(2*π)
+
     mode_transverse_profiles = []
     h = Vector{eltype(Efield)}(undef, length(x))
 
@@ -384,9 +391,18 @@ function get_h(
                 # h = h / maximum(abs.(h))
 
                 nametag = nametag * "$(v-1)"
-                @printf("mode %1d subtracted from E field to get mode %1d, \
-                            ξv=%8.6f, intgration limit=%7.3f um. Got %s.\n", 
-                            (v-1), (μ-1), -ξv[μ]*um, lim/um, nametag
+                @printf("mode %1d subtracted from E field to get 
+                            mode %1d, \
+                            neff=%9.6f, \
+                            ξv=%9.6f, \
+                            integration limit=%7.3f um. \
+                            Got %s.\n", 
+                            (v-1), 
+                            (μ-1), 
+                            neff[μ],
+                            -ξv[μ]*um, 
+                            lim/um, 
+                            nametag
                             )
                 # println("h$(v-1) calculated.")
                 # if iter_num == (mode_num-1)
@@ -397,7 +413,7 @@ function get_h(
 
                 figname = "./$nametag-after-propagation.png"
                 corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = correlation_method(hfield, dx, dz)
-                plot_with_corr(x, z, hfield, n0, Δn, n, h, corr_h, 
+                plot_with_corr(x, z, hfield, n0, Δn, λ, n, h, corr_h, 
                                 ξ_h, ξv_h, ξvind_h, peakh_h, Pξ_abs_h, figname; ymax=ymax)
 
                 iter_num += 1

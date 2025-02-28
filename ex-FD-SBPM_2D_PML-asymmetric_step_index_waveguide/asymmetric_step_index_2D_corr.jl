@@ -1,4 +1,4 @@
-include("FD-SBPM-2D-waveguide-PML.jl")
+include("../lib-FD-SBPM-2D-waveguide-PML.jl")
 
 using .FD_SBPM_2D
 using Serialization
@@ -8,11 +8,11 @@ function main()
     um = 10^-6
     nm = 10^-9
 
-    Nx = 1000
-    Nz = 10000
+    Nx = 100
+    Nz = 100000
 
     Lx = 5*um
-    Lz = 250*um
+    Lz = 20000*um
 
     x = range(-Lx/2, Lx/2; length=Nx)
     z = range(0, Lz; length=Nz)
@@ -24,7 +24,7 @@ function main()
     @show dz / um
 
     n0 = 1.45
-    center = 0.
+    center = 0*um
     slabthick = 0.6*um
     slabindex = 1.95
     uppercladindex = 1.
@@ -39,9 +39,10 @@ function main()
     λ = 1550*nm
     k0 = 2*π / λ
     β = k0 * n0
-    @assert dz < (λ/2 / n0 / Δn)
+    Δnmax = maximum(real(n)) - n0
+    @assert dz < (λ/2 / n0 / Δnmax) # For details, refer to eq 2.106.
     w = 0.5*um
-    xshift = 1*um
+    xshift = 0*um
     Eline = get_gaussian_input(x, xshift, w)
  
     α = 0.50001
@@ -60,9 +61,9 @@ function main()
 
     Efield = get_Efield(x, z, nt, n, λ, α, Eline)
 
-    serialize("x.dat", x)
-    serialize("z.dat", z)
-    serialize("Efield.dat", Efield)
+    serialize("./x.dat", x)
+    serialize("./z.dat", z)
+    serialize("./Efield.dat", Efield)
 
     Pz, ξ, ξvind, ξv, peakh, Pξ_abs= correlation_method(Efield, dx, dz)
 
@@ -92,14 +93,14 @@ function main()
     ymax = deserialize(ymaxname)
 
     figname = "./FD_SBPM-2D-waveguide-PML.png"
-    plot_with_corr(x, z, Efield, n0, Δn, n, Eline, 
+    plot_with_corr(x, z, Efield, n0, Δnmax, n, Eline, 
                     Pz, ξ, ξv, ξvind, peakh, Pξ_abs, figname; ymax=ymax)
 
-    mode_num = 3
+    mode_num = 2
     mode_transverse_profiles = get_h(Lx, Lz, α, mode_num, 
-                                        Efield, nt, n0, Δn, n, 
+                                        Efield, nt, n0, Δnmax, n, 
                                         λ, ξv; ymax=ymax)
-    # mode_profiles = get_h(Lx, Lz, α, mode_num, Efield, n0, Δn, n , λ, ξv)
+    # mode_profiles = get_h(Lx, Lz, α, mode_num, Efield, n0, Δnmax, n , λ, ξv)
     serialize("./mode_transverse_profiles.dat", mode_transverse_profiles)
 
     mode_transverse_profiles = deserialize("./mode_transverse_profiles.dat")
