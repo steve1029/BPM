@@ -7,8 +7,11 @@ using Peaks
 using Profile
 using Printf
 
-const um = 10^-6
-const nm = 10^-9
+# const um = 10^-6
+# const nm = 10^-9
+
+const um = 1.
+const nm = 10^-3
 
 export get_gaussian_input, get_step_index_profile, 
         get_symmetric_Gaussian_index_profile,
@@ -25,28 +28,46 @@ function get_gaussian_input(
 end
 
 function get_step_index_profile(
-    Nx::Int, 
-    Nz::Int,
-    dx::Number,
-    center::Number,
-    slabthick::Number,
-    slabindex::Number,
-    uppercladthick::Number,
-    uppercladindex::Number,
-    lowercladthick::Number,
-    lowercladindex::Number
+    x::AbstractVector, 
+    z::AbstractVector, 
+    loc_discont::AbstractVector,
+    refractiveindice::AbstractVector;
+    save = false,
+    savedir = "./"
     )::Matrix
 
-    centerindex = Int(Nx/2) + center/dx
-    
+    Nx = length(x)
+    Nz = length(z)
+
+    dx = step(x)
+
     n = ones(ComplexF64, Nx, Nz)
-    bcm = Int(round(centerindex - slabthick/2/dx - lowercladthick/2/dx))
-    bsm = Int(round(centerindex - slabthick/2/dx))
-    bsp = Int(round(centerindex + slabthick/2/dx))
-    bcp = Int(round(centerindex + slabthick/2/dx + uppercladthick/2/dx))
-    n[bcm:bsm,:] .= lowercladindex
-    n[bsm:bsp,:] .= slabindex 
-    n[bsp:bcp,:] .= uppercladindex
+
+    @assert Nx % 2 == 1 "Nx must be odd!"
+    loc_discont_ind = Int64.(round.(loc_discont ./ dx) .+ ((Nx+1)/2))
+
+    # @show loc_discont_ind
+
+    for (i, loc) in enumerate(loc_discont_ind)
+
+        if i == 1
+            continue
+        else 
+            srt = loc_discont_ind[i-1]
+            n[srt:loc, :] .= refractiveindice[i-1]
+            # @show refractiveindice[i-1]
+        end
+    end
+
+    if save == true
+        hm = heatmap(abs.(z)./um, x./um, real(n), 
+                        dpi=300, 
+                        # clim=(n0, n0+Δn), 
+                        xlabel="z (μm)", ylabel="x (μm)", zlabel="index", 
+                        title="Refractive index")
+
+        savefig(savedir*"refractive_index_profile.png")
+    end
 
     return n
 end
@@ -126,13 +147,13 @@ function _pml(
     imp = sqrt(μ0/ε0)
     ω = 2*π*c / λ
 
-    go = 2.
-    bdwx = (npml-1) * dx
-    σmax = -(go+1) * log(rc0) / (2*imp*bdwx)
-    # σmax = 5*ε0*ω
+    go = 2. # grading order.
+    # bdwx = (npml-1) * dx
+    # σmax = -(go+1) * log(rc0) / (2*imp*bdwx)
+    σmax = 5*ε0*ω
 
     loc = range(0, 1; length=npml)
-    σx = σmax .* loc.^go
+    σx = σmax .* (loc.^go)
 
     q = ones(ComplexF64, Nx, Nz)
     ll = np[      npml:-1:  1,:]
@@ -201,9 +222,14 @@ end
 function correlation_method
 
     Note that Pf is not a function of ξ.
-    Note that since fftfreq returns frequency, we need 2*π to make angular freq.
+    Note that since fftfreq returns frequency, 
+    we need 2*π to make angular freq.
 """
-function correlation_method(Efield::AbstractMatrix, dx::Number, dz::Number)
+function correlation_method(
+    Efield::AbstractMatrix, 
+    dx::Number, 
+    dz::Number
+    )
 
     Nz = size(Efield, 2)
     Pz = zeros(ComplexF64, Nz)
@@ -220,12 +246,14 @@ function correlation_method(Efield::AbstractMatrix, dx::Number, dz::Number)
     Pξ_abs = abs.(F)
 
     fs = 1/dz
-    ξ = -fftshift(fftfreq(Nz, fs).*(2*π))
+    # Since FFT returns with inverted sign,
+    # there should be minus sign in front of ξ.
+    ξ = -fftshift(fftfreq(Nz, fs).*(2*π)) 
 
     pks = findmaxima(Pξ_abs, 20)
-    ξv = ξ[pks.indices]
 
     ξvind = pks.indices
+    ξv = ξ[ξvind]
     peakh = pks.heights
 
     return Pz, ξ, ξvind, ξv, peakh, Pξ_abs 
@@ -254,8 +282,9 @@ function plot_field(
                     title="Straight waveguide")
     hm2 = heatmap(abs.(z)./um, x./um, real(n), 
                     dpi=300, 
-                    clim=(n0, n0+Δn), 
+                    # clim=(n0, n0+Δn), 
                     xlabel="z (μm)", ylabel="x (μm)", zlabel="index", 
+                    color=:blues,
                     title="Refractive index")
 
     plots = [inputplot, hm1, hm2]
@@ -276,7 +305,6 @@ function plot_with_corr(
     field::AbstractMatrix, 
     n0::Number,
     Δn::Number,
-    λ::Number,
     n::Matrix{ComplexF64}, 
     input::AbstractVector, 
     Pz::AbstractVector, 
@@ -285,7 +313,9 @@ function plot_with_corr(
     ξvind::AbstractVector, 
     peakh::AbstractVector, 
     Pξ_abs::AbstractVector, 
-    figname::String; ymax::Number=Inf, savedir="./")
+    figname::String; 
+    ymax::Number=Inf, 
+    savedir="./")
 
     profileplots = plot_field(x, z, field, n0, Δn, n, input, figname; 
                                 savedir=savedir, save=false)
@@ -361,37 +391,44 @@ function get_h(
 
     k0 = 2*π/λ
     β = n0*k0
-    neff = (β.+ξv).*λ./(2*π)
+    neff = (β.+ξv)./k0
 
     mode_transverse_profiles = []
-    h = Vector{eltype(Efield)}(undef, length(x))
+    # h = Vector{eltype(Efield)}(0+0im, length(x))
+    # h = fill(zero(eltype(Efield)), length(x))
+    h = Efield[:,end]
 
     # Get the μ-th mode.
     for μ in 1:mode_num
 
-        hfields = [Efield]
+        psifields = [Efield]
         iter_num = 1
         nametag = "h$(μ-1)"
 
         for v in 1:mode_num
 
-            if v == μ continue
+            if v == μ 
+                # We are trying to get μ-th mode.
+                # If v == μ, then μ-th mode will be eliminated from the field!
+                # So, this case should be neglected!
+                continue
+
             elseif v != μ 
 
-                hfield = hfields[iter_num]
+                psi = psifields[iter_num]
 
                 phasor = exp.(-1im*ξv[μ]*z) # since ξv is negetive here, minus sign is added.
                 phasor_mat = repeat(transpose(phasor), Nx, 1)
-                psi = hfield .* dz .* phasor_mat
+                integrand = psi .* dz .* phasor_mat
 
                 Δβ = ξv[μ]-ξv[v]
-                lim = 2*π/ abs(Δβ)
+                lim = 2*π / abs(Δβ)
                 ind = argmin(abs.(z .- lim))
-                h = vec(sum(psi[:,1:ind], dims=2))
+                h = vec(sum(integrand[:,1:ind], dims=2)) # get rid of mode v from integrand.
                 # h = h / maximum(abs.(h))
 
                 nametag = nametag * "$(v-1)"
-                @printf("mode %1d subtracted from E field to get 
+                @printf("mode %1d subtracted from E field to get \
                             mode %1d, \
                             neff=%9.6f, \
                             ξv=%9.6f, \
@@ -408,13 +445,14 @@ function get_h(
                 # if iter_num == (mode_num-1)
                 # end
 
-                hfield = get_Efield(x, z, nt, n, λ, α, h)
-                push!(hfields, hfield)
+                psi = get_Efield(x, z, nt, n, λ, α, h)
+                push!(psifields, psi)
 
                 figname = "./$nametag-after-propagation.png"
-                corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = correlation_method(hfield, dx, dz)
-                plot_with_corr(x, z, hfield, n0, Δn, λ, n, h, corr_h, 
-                                ξ_h, ξv_h, ξvind_h, peakh_h, Pξ_abs_h, figname; ymax=ymax)
+                corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = correlation_method(psi, dx, dz)
+                plot_with_corr(x, z, psi, n0, Δn, n, h, corr_h, 
+                                ξ_h, ξv_h, ξvind_h, peakh_h, Pξ_abs_h, 
+                                figname; ymax=ymax)
 
                 iter_num += 1
             end
@@ -431,14 +469,17 @@ function plot_mode(
     x::AbstractVector,
     mode_profiles::AbstractVecOrMat{T},
     ξv::AbstractVector,
-    β::Number
+    λ::Number,
+    n0::Number
     )::Int where T
 
     num = length(mode_profiles)
 
     # labels = ["input"; ["mode $(i-1)" for i in 1:num]]
 
-    labels = ["mode $(i-1), β$i=$(@sprintf("%.4f um^(-1)", (ξv[i]+β)*um))" for i in 1:num]
+    k0 = 2*π / λ
+    β = k0 * n0
+    labels = ["mode $(i-1), β$i=$(@sprintf("%.7f", (ξv[i]+β)/k0))" for i in 1:num]
 
     plots = []
 
