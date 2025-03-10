@@ -1,30 +1,37 @@
-include("./FD-SBPM-2D-waveguide-PML.jl")
+include("../lib-FD-SBPM-2D-waveguide-PML.jl")
 
-using Serialization
 using .FD_SBPM_2D
+using Serialization
 using Printf
 
 function main()
 
+    #=
     savedir = joinpath(pwd(),"./im-dis-FD_SBPM_2D-PML/")
 
     if !isdir(savedir)
         mkdir(savedir)
         println("Folder created.")
     end
+    =#
 
-    um = 10^-6
-    nm = 10^-9
+    savedir = joinpath(pwd(), "ex-FD_SBPM-2D_PML-gaussian_index_waveguide/")
+    @show savedir
+    # um = 10^-6
+    # nm = 10^-9
+
+    um = 1.
+    nm = 10^-3
 
     Nx = 400
-    Nz = 12
+    Nz = 400
 
     Lx = 20*um
-    Lz = 120*um
+    Lz = 80*um
 
     x = range(-Lx/2, Lx/2; length=Nx)
     z = range(0, Lz; length=Nz)
-    τ=1im.*z
+    τ = 1im.*z
 
     dx = step(x)
     dz = step(z)
@@ -40,25 +47,30 @@ function main()
 
     λ = 850*nm
     k0 = 2*π / λ
-    ntrial = 1.457
+    ntrial = 1.463
     Δntrial = ntrial - n0 
     Δβ = Δntrial*k0
     α = 0.5001
 
     @show ntrial
-    @assert abs.(dz) < (λ/2 / n0 / Δn)
+    @assert abs.(dz) < (λ/2 / n0 / Δn / 5)
 
     w = 2*um
     xshift = 1*um
-    mode = 1
-    # Eline = get_gaussian_input(x, xshift, w)
-    Eline = deserialize(savedir*"newinput_no_mode_$(mode-1).dat")
-    newinput = 
-        get_mode_profiles_im_dis(x, τ, Eline, n, ntrial, λ, α, 5; 
-                                    mode=mode,
-                                    savedir=savedir)
+    mode_to_get = 1
 
-    serialize(savedir*"newinput_no_mode_$mode.dat", newinput)
+    if mode_to_get == 0
+        Eline = get_gaussian_input(x, xshift, w)
+    else
+        Eline = deserialize(savedir*"newinput_no_mode_$(mode_to_get-1).dat")
+    end
+
+    newinput = 
+        get_mode_profiles_im_dis(x, τ, Eline, n, ntrial, λ, α, 4; 
+                                    mode=mode_to_get,
+                                    savedir=savedir
+                                    )
+    serialize(savedir*"newinput_no_mode_$mode_to_get.dat", newinput)
     serialize(savedir*"x.dat", x)
     serialize(savedir*"z.dat", z)
 

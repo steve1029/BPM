@@ -117,12 +117,7 @@ function get_Efield(
     end
 
     for step in 2:Nz
-        Efield[:,step] = _to_next(step, α, λ, 
-                                    dx, dz, 
-                                    nt, n, 
-                                    Tm, Tp, R, 
-                                    Efield[:,step-1];
-                                    )
+        Efield[:,step] = _to_next(step, α, λ, dx, dz, nt, n, Tm, Tp, R, Efield[:,step-1];)
     end
 
     return Efield
@@ -422,16 +417,14 @@ function get_h(
 
                 psi = psifields[iter_num]
 
-                # since ξv is negetive here, minus sign is added.
-                phasor = exp.(-1im*ξv[μ]*z) 
+                phasor = exp.(-1im*ξv[μ]*z) # since ξv is negetive here, minus sign is added.
                 phasor_mat = repeat(transpose(phasor), Nx, 1)
                 integrand = psi .* dz .* phasor_mat
 
                 Δβ = ξv[μ]-ξv[v]
                 lim = 2*π / abs(Δβ)
                 ind = argmin(abs.(z .- lim))
-                # get rid of mode v from integrand.
-                h = vec(sum(integrand[:,1:ind], dims=2)) 
+                h = vec(sum(integrand[:,1:ind], dims=2)) # get rid of mode v from integrand.
                 # h = h / maximum(abs.(h))
 
                 nametag = nametag * "$(v-1)"
@@ -456,8 +449,7 @@ function get_h(
                 push!(psifields, psi)
 
                 figname = "./$nametag-after-propagation.png"
-                corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = 
-                    correlation_method(psi, dx, dz)
+                corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = correlation_method(psi, dx, dz)
                 plot_with_corr(x, z, psi, n0, Δn, n, h, corr_h, 
                                 ξ_h, ξv_h, ξvind_h, peakh_h, Pξ_abs_h, 
                                 figname; ymax=ymax)
@@ -532,14 +524,12 @@ function get_mode_profiles_im_dis(
     savedir = savedir
     weightedβ = ntrial*k
     newinput = uline
-
     # Get mode 0.
     for i in 1:iternum
         ufield = get_Efield(x, τ, ntrial, n, λ, α, newinput; pml=false)
         af = ufield[:,end]
 
-        weightedξv = real(( log(sum(ufield[:,end-10])*dx) -
-                            log(sum(ufield[:,end-11])*dx))*1im/dτ)
+        weightedξv = real((log(sum(af)*dx) - log(sum(ufield[:,end-1])*dx))*1im/dτ)
         weightedβ += weightedξv
 
         figname = "get_mode_$mode-trial_$i.png"
@@ -547,13 +537,8 @@ function get_mode_profiles_im_dis(
                     savedir=savedir,
                     figsave=figsave)
 
-        st = @sprintf( "ntrial=%9.6f, \
-                        weightedξv/k=%9.6f, \
-                        redefined n =%9.6f\n",
-                        ntrial, 
-                        weightedξv/k, 
-                        weightedβ/k
-                        )
+        st = @sprintf("n0=%9.6f, weightedξv/k=%9.6f, redefined n =%9.6f\n", 
+                        ntrial, weightedξv/k, weightedβ/k)
         print(st)
 
         ntrial = weightedβ/k
@@ -603,11 +588,7 @@ function plot_im_dis(
     # annotate!(fplot, 5, -0.2, text(nst, 12, :blue))
     plots = [iplot, Eplot, fplot]
     layout = @layout [grid(1,3)]
-    plot(plots..., 
-            layout=layout, 
-            size=(1400, 500),
-            title="$figname"
-            )
+    plot(plots..., layout=layout, size=(1400, 500))
 
     if figsave == true
         savefig(savedir*figname)

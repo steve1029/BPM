@@ -5,7 +5,7 @@ using Serialization
 
 function main()
 
-    fname = "ex-FD-SBPM-2D_PML-gaussian_index_waveguide/"
+    fname = "ex-FD_SBPM-2D_PML-gaussian_index_waveguide/"
     working_dir = joinpath(pwd(), fname)
     cd(working_dir)
     @show working_dir
