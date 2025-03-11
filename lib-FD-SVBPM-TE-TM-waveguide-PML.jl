@@ -1,4 +1,4 @@
-module FD_SBPM_2D
+module FD_SVBPM_2D
 
 using Plots
 using LinearAlgebra
@@ -15,7 +15,7 @@ const nm = 10^-3
 
 export get_gaussian_input, get_step_index_profile, 
         get_symmetric_Gaussian_index_profile,
-        _to_next, _pml, get_Efield, correlation_method, 
+        _to_next_z, _pml, get_Efield, correlation_method, 
         plot_field, plot_with_corr, 
         get_h, plot_mode, get_mode_profiles_im_dis
 
@@ -59,10 +59,13 @@ function get_step_index_profile(
         end
     end
 
+    nmax = maximum(real(n))
+    nmin = minimum(real(n))
+    
     if save == true
         hm = heatmap(abs.(z)./um, x./um, real(n), 
                         dpi=300, 
-                        # clim=(n0, n0+Δn), 
+                        clim=(nmin, nmax), 
                         xlabel="z (μm)", ylabel="x (μm)", zlabel="index", 
                         title="Refractive index")
 
@@ -89,12 +92,13 @@ end
 function get_Efield(
     x::AbstractVector,
     z::AbstractVector,
-    nt::Number, 
+    nref::Number, 
     n::Matrix{ComplexF64}, 
     λ::Number, 
     α::Number, 
     input::Vector{ComplexF64};
-    pml = true
+    pml = true,
+    pol = "TE"
     )::Matrix{ComplexF64}
 
     npml = 10
@@ -109,15 +113,15 @@ function get_Efield(
     Efield[:,1] = input
 
     if pml == false
-        Tm = ones(eltype(Efield), Nx-1, Nz)
-        Tp = ones(eltype(Efield), Nx-1, Nz)
-        R  = ones(eltype(Efield), Nx, Nz)
+        M = ones(eltype(Efield), Nx-1, Nz)
+        N = ones(eltype(Efield), Nx-1, Nz)
+        R = ones(eltype(Efield), Nx, Nz)
     else
-        Tm, Tp, R = _pml(Nx, Nz, npml, dx, n, λ)
+        M, N, R = _pml(Nx, Nz, npml, dx, n, λ; pol=pol)
     end
 
     for step in 2:Nz
-        Efield[:,step] = _to_next(step, α, λ, dx, dz, nt, n, Tm, Tp, R, Efield[:,step-1];)
+        Efield[:,step] = _to_next_z(step, α, λ, dx, dz, nref, n, M, N, R, Efield[:,step-1];)
     end
 
     return Efield
@@ -137,8 +141,10 @@ function _pml(
     Nz::Int64,
     npml::Int64,
     dx::Number,
-    np::Matrix{ComplexF64}, 
-    λ::Number)::Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, Matrix{ComplexF64}}
+    n::Matrix{ComplexF64}, 
+    λ::Number;
+    pol = "TE"
+    )::Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, Matrix{ComplexF64}}
 
     rc0 = 1.e-16
     μ0 = 4*π*10^-7
@@ -155,59 +161,77 @@ function _pml(
     loc = range(0, 1; length=npml)
     σx = σmax .* (loc.^go)
 
-    q = ones(ComplexF64, Nx, Nz)
-    ll = np[      npml:-1:  1,:]
-    rr = np[end+1-npml: 1:end,:]
+    ll = n[      npml:-1:  1,:]
+    rr = n[end+1-npml: 1:end,:]
 
+    q = ones(ComplexF64, Nx, Nz)
     q[      npml:-1:  1, :] = 1 ./ (1 .- ((1im.*σx) ./ (ω .* ε0 .* ll.^2)))
     q[end+1-npml: 1:end, :] = 1 ./ (1 .- ((1im.*σx) ./ (ω .* ε0 .* rr.^2)))
 
-    Tm = q[2:end  ,:] .* (q[2:end  ,:] .+ q[1:end-1,:]) ./ 2
-    Tp = q[1:end-1,:] .* (q[1:end-1,:] .+ q[2:end  ,:]) ./ 2
+    qp = q[2:end  ,:]
+    qm = q[1:end-1,:]
 
-    R = ones(ComplexF64, Nx, Nz) 
-    R .*= (q.^2 ./ 2)
-    R[2:end  ,:] += q[2:end  ,:] .* q[1:end-1,:] ./ 4
-    R[1:end-1,:] += q[1:end-1,:] .* q[2:end  ,:] ./ 4
+    np = n[2:end  ,:]
+    nm = n[1:end-1,:]
 
-    return Tm, Tp, R
+    R = zeros(ComplexF64, Nx, Nz) 
+
+    if pol == "TM"
+        qn = (qp .+ qm)./(np.^2 .+ nm.^2)
+
+        M = qp .* qn .* (nm.^2)
+        N = qm .* qn .* (np.^2)
+
+        R[2:end  ,:] .+= qp .* qn .* (np.^2)
+        R[1:end-1,:] .+= qm .* qn .* (nm.^2)
+
+    elseif pol == "TE"
+
+        M = qp .* (qp .+ qm) ./ 2
+        N = qm .* (qm .+ qp) ./ 2
+
+        R .+= q.^2
+        R[2:end  ,:] += qp .* qm ./ 2
+        R[1:end-1,:] += qm .* qp ./ 2
+    end
+
+    return M, N, R
 end
 
 
-
 """
-function _to_next
+function _to_next_z
     In this function, we used 'exp(i(wt-kr))' notation.
 
 # Arguments
 # Returns
 # Example
 """
-function _to_next(
+function _to_next_z(
     step::Int,
     α::Number,
     λ::Number,
     dx::Number, 
     dz::Number, 
-    nt::Number,
+    nref::Number,
     n::Matrix{ComplexF64}, 
-    Tm::Matrix{ComplexF64}, 
-    Tp::Matrix{ComplexF64}, 
+    M::Matrix{ComplexF64}, 
+    N::Matrix{ComplexF64}, 
     R::Matrix{ComplexF64}, 
     E::Vector{ComplexF64};
     )::Vector{ComplexF64}
 
     k0 = 2*π / λ
-    nd = n[:,step].^2 .- nt^2
+    nd = n[:,step].^2 .- nref^2
 
-    b = (2*α.* R[:, step] /dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*nt/dz)
-    a = (-α/dx^2) .* Tm[:, step]
-    c = (-α/dx^2) .* Tp[:, step]
+    a = (-α/dx^2) .* M[:, step]
+    b = (2im*k0*nref/dz) .+ (α.* R[:, step] ./ dx^2) .- (α.*nd.*k0^2)
+    c = (-α/dx^2) .* N[:, step]
     A = diagm(-1=>a, 0=>b, 1=>c)
 
-    D = (1-α)*k0^2 .* nd .- (2*(1-α)/dx^2 .* R[:, step]) .+ (2im*k0*nt/dz)
-    above = ((1-α) / dx^2) .* Tp[:, step]
-    below = ((1-α) / dx^2) .* Tm[:, step]
+    D = (2im*k0*nref/dz) .- ((1-α)/dx^2 .* R[:, step]) .+ (1-α)*k0^2 .* nd
+    above = ((1-α) / dx^2) .* N[:, step]
+    below = ((1-α) / dx^2) .* M[:, step]
 
     B = diagm(-1=>below, 0=>D, 1=>above)
 
@@ -263,11 +287,12 @@ function plot_field(
     x::AbstractVector, 
     z::AbstractVector, 
     field::AbstractMatrix, 
-    n0::Number,
-    Δn::Number,
     n::Matrix{ComplexF64}, 
     input::AbstractVector, 
     figname::String; savedir="./", save=true)
+
+    nmax = maximum(real(n))
+    nmin = minimum(real(n))
     
     intensity = abs2.(field)
     input_abs = (abs.(input).^2) 
@@ -282,7 +307,7 @@ function plot_field(
                     title="Straight waveguide")
     hm2 = heatmap(abs.(z)./um, x./um, real(n), 
                     dpi=300, 
-                    # clim=(n0, n0+Δn), 
+                    clim=(nmin, nmax), 
                     xlabel="z (μm)", ylabel="x (μm)", zlabel="index", 
                     color=:blues,
                     title="Refractive index")
@@ -303,8 +328,6 @@ function plot_with_corr(
     x::AbstractVector,
     z::AbstractVector, 
     field::AbstractMatrix, 
-    n0::Number,
-    Δn::Number,
     n::Matrix{ComplexF64}, 
     input::AbstractVector, 
     Pz::AbstractVector, 
@@ -314,10 +337,10 @@ function plot_with_corr(
     peakh::AbstractVector, 
     Pξ_abs::AbstractVector, 
     figname::String; 
-    ymax::Number=Inf, 
+    ymax=Inf, 
     savedir="./")
 
-    profileplots = plot_field(x, z, field, n0, Δn, n, input, figname; 
+    profileplots = plot_field(x, z, field, n, input, figname; 
                                 savedir=savedir, save=false)
     
     normed_Pξ_abs = Pξ_abs ./ maximum(Pξ_abs)
@@ -362,9 +385,7 @@ function get_h(
     α::Number,
     mode_num::Int,
     Efield::Matrix{ComplexF64},
-    nt::Number,
-    n0::Number,
-    Δn::Number,
+    nref::Number,
     n::Matrix{ComplexF64},
     λ::Number,
     ξv::AbstractVector;
@@ -380,17 +401,14 @@ function get_h(
     dx = step(x)
     dz = step(z)
 
-    # k0 = 2*π / λ
-    # # β = n0 * k0
-    # βs = ξv .+ β
-
     # Since we inverted the sign of ξv, 
     # as FFTW returns -ξ, not ξ, 
     # roll back the sign of ξv.
     ξv = -ξv
 
     k0 = 2*π/λ
-    β = n0*k0
+    β = nref*k0
+    βs = ξv .+ β
     neff = (β.+ξv)./k0
 
     mode_transverse_profiles = []
@@ -445,12 +463,12 @@ function get_h(
                 # if iter_num == (mode_num-1)
                 # end
 
-                psi = get_Efield(x, z, nt, n, λ, α, h)
+                psi = get_Efield(x, z, nref, n, λ, α, h)
                 push!(psifields, psi)
 
                 figname = "./$nametag-after-propagation.png"
                 corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = correlation_method(psi, dx, dz)
-                plot_with_corr(x, z, psi, n0, Δn, n, h, corr_h, 
+                plot_with_corr(x, z, psi, n, h, corr_h, 
                                 ξ_h, ξv_h, ξvind_h, peakh_h, Pξ_abs_h, 
                                 figname; ymax=ymax)
 
@@ -470,7 +488,7 @@ function plot_mode(
     mode_profiles::AbstractVecOrMat{T},
     ξv::AbstractVector,
     λ::Number,
-    n0::Number
+    nref::Number
     )::Int where T
 
     num = length(mode_profiles)
@@ -478,8 +496,8 @@ function plot_mode(
     # labels = ["input"; ["mode $(i-1)" for i in 1:num]]
 
     k0 = 2*π / λ
-    β = k0 * n0
-    labels = ["mode $(i-1), β$i=$(@sprintf("%.7f", (ξv[i]+β)/k0))" for i in 1:num]
+    β = k0 * nref
+    labels = ["mode $(i-1), Neff$i=$(@sprintf("%.7f", (ξv[i]+β)/k0))" for i in 1:num]
 
     plots = []
 
@@ -537,7 +555,7 @@ function get_mode_profiles_im_dis(
                     savedir=savedir,
                     figsave=figsave)
 
-        st = @sprintf("n0=%9.6f, weightedξv/k=%9.6f, redefined n =%9.6f\n", 
+        st = @sprintf("ntrial=%9.6f, weightedξv/k=%9.6f, redefined n =%9.6f\n", 
                         ntrial, weightedξv/k, weightedβ/k)
         print(st)
 
@@ -579,12 +597,14 @@ function plot_im_dis(
                     title="Straight waveguide")
 
     nst = @sprintf("ntrial=%8.6f", ntrial)
-    fplot = plot(x./um, real.(af), 
-                            label="f(x,∞)", 
-                            title="Output,"*nst,
-                            xlabel="τ",
-                            ylabel="x (μm)",
-                            lw=1.5, dpi=300,)
+    fplot = plot(x./um, 
+                    real.(af),
+                    label="f(x,∞)", 
+                    title="Output,"*nst,
+                    xlabel="τ",
+                    ylabel="x (μm)",
+                    lw=1.5, 
+                    dpi=300)
     # annotate!(fplot, 5, -0.2, text(nst, 12, :blue))
     plots = [iplot, Eplot, fplot]
     layout = @layout [grid(1,3)]
