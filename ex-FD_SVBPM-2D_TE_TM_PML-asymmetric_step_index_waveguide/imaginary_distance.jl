@@ -2,12 +2,13 @@ include("../lib-FD-SVBPM-TE-TM-waveguide-PML.jl")
 
 using .FD_SVBPM_2D
 using Serialization
+using Plots
 
 function main()
 
     fname = "ex-FD_SVBPM-2D_TE_TM_PML-asymmetric_step_index_waveguide/"
     working_dir = joinpath(pwd(), fname)
-    cd(working_dir)
+    # cd(working_dir)
     @show working_dir
     # working_dir = pwd()
 
@@ -33,9 +34,11 @@ function main()
 
     x = range(-Lx/2, Lx/2; length=Nx)
     z = range(0, Lz; length=Nz)
+    τ = 1im.*z
 
     dx = step(x)
     dz = step(z)
+    dτ = step(τ)
 
     @show dx / um
     @show dz / um
@@ -65,11 +68,29 @@ function main()
     @assert dz < criterion "dz must be less than $(criterion/um) um." # For details, refer to eq 2.106.
     w = 0.5*um
     xshift = 0*um
-    Eline = get_gaussian_input(x, xshift, w)
  
     α = 0.50001
 
-    pol = "TE"
+    pol = "TM"
+    mode_to_get = 1
+
+    if mode_to_get == 0
+        Eline = get_gaussian_input(x, xshift, w)
+    else
+        Eline = deserialize(savedir*"newinput_no_mode_$(mode_to_get-1).dat")
+    end
+
+    newinput = 
+        get_mode_profiles_im_dis(x, τ, Eline, n, ntrial, λ, α, 4; 
+                                    mode=mode_to_get,
+                                    savedir=savedir
+                                    )
+    serialize(savedir*"newinput_no_mode_$mode_to_get.dat", newinput)
+    serialize(savedir*"x.dat", x)
+    serialize(savedir*"z.dat", z)
+
+
+    #=
     Efield = get_Efield(x, z, nref, n, λ, α, Eline; pml=true, pol=pol)
 
     nametag = "Efield_$pol"
@@ -85,7 +106,10 @@ function main()
     serialize(working_dir*"z.dat", z)
     serialize(working_dir*"$nametag.dat", Efield)
 
-    plot_field(x, z, Efield, n, Eline, "$nametag-profile.png")
+    inputplot, Iplot, nplot = plot_field(x, z, Efield, n, Eline)
+    layout = @layout [grid(1,3)]
+    allplots = plot([inputplot, Iplot, nplot]..., layout=layout, size=(1400, 500))
+    savefig(allplots, working_dir*"$nametag-profile.png")
 
     Pz, ξ, ξvind, ξv, peakh, Pξ_abs= correlation_method(Efield, dx, dz)
 
@@ -105,7 +129,7 @@ function main()
 
     x = deserialize(working_dir*"x.dat")
     z = deserialize(working_dir*"z.dat")
-    Exfield = deserialize(working_dir*"$nametag.dat")
+    Efield = deserialize(working_dir*"$nametag.dat")
     Pz = deserialize(Pzname)
     ξ = deserialize(ξname)
     ξv = deserialize(ξvname)
@@ -115,12 +139,13 @@ function main()
     ymax = deserialize(ymaxname)
 
     figname = "FD_SVBPM-2D-$pol-waveguide-PML.png"
-    plot_with_corr(x, z, Efield, n, Eline, 
-                    Pz, ξ, ξv, ξvind, peakh, Pξ_abs, 
-                    figname; 
-                    ymax=ymax, 
-                    savedir=working_dir
-                    )
+    corrplots = plot_with_corr(x, z, Efield, n, Eline, 
+                                Pz, ξ, ξv, ξvind, peakh, Pξ_abs
+                                )
+
+    layout = @layout [grid(1,3); b{0.333w} c{0.666w}]
+    all_in_one = plot(corrplots..., layout=layout, size=(1400, 1000))
+    savefig(all_in_one, working_dir*figname)
 
     # exit()
     mode_num = 1
@@ -132,12 +157,21 @@ function main()
                                         λ, 
                                         ξv; ymax=ymax)
 
-    # mode_profiles = get_h(Lx, Lz, α, mode_num, Exfield, n0, Δnmax, n , λ, ξv)
     modename = working_dir*"$nametag-mode_transverse_profiles.dat"
     serialize(modename, mode_transverse_profiles)
 
     mode_transverse_profiles = deserialize(modename)
-    plot_mode(x, mode_transverse_profiles, ξv, λ, nref)
+    modeplots = plot_mode(x, mode_transverse_profiles, ξv, λ, nref)
+
+    nplots = length(modeplots)
+    allplot = plot(modeplots..., 
+                    dpi=300, 
+                    layout=grid(nplots,1), 
+                    size=(500, 200*nplots), 
+                    link=:x)
+
+    savefig(allplot, "./$pol-all_modes.png")
+    =#
     println("Simulation finished.")
 end
 

@@ -288,8 +288,7 @@ function plot_field(
     z::AbstractVector, 
     field::AbstractMatrix, 
     n::Matrix{ComplexF64}, 
-    input::AbstractVector, 
-    figname::String; savedir="./", save=true)
+    input::AbstractVector)
 
     nmax = maximum(real(n))
     nmin = minimum(real(n))
@@ -312,15 +311,7 @@ function plot_field(
                     color=:blues,
                     title="Refractive index")
 
-    plots = [inputplot, hm1, hm2]
-    layout = @layout [grid(1,3)]
-    plot(plots..., layout=layout, size=(1400, 500))
-
-    if save == true
-        savefig(savedir*figname)
-    end
-
-    return plots
+    return inputplot, hm1, hm2
 end
 
 
@@ -335,13 +326,11 @@ function plot_with_corr(
     ξv::AbstractVector, 
     ξvind::AbstractVector, 
     peakh::AbstractVector, 
-    Pξ_abs::AbstractVector, 
-    figname::String; 
-    ymax=Inf, 
-    savedir="./")
+    Pξ_abs::AbstractVector;)
 
-    profileplots = plot_field(x, z, field, n, input, figname; 
-                                savedir=savedir, save=false)
+    inputplot, Iplot, nplot = plot_field(x, z, field, n, input)
+
+    profileplots = [inputplot, Iplot, nplot]
     
     normed_Pξ_abs = Pξ_abs ./ maximum(Pξ_abs)
     normed_Pz = real.(Pz) ./ maximum(real.(Pz))
@@ -374,9 +363,7 @@ function plot_with_corr(
     push!(profileplots, Pfz_anal)
     # @show typeof(profileplots)
 
-    layout = @layout [grid(1,3); b{0.333w} c{0.666w}]
-    plot(profileplots..., layout=layout, size=(1400, 1000))
-    savefig(savedir*figname)
+    return profileplots
 end
 
 function get_h(
@@ -389,6 +376,7 @@ function get_h(
     n::Matrix{ComplexF64},
     λ::Number,
     ξv::AbstractVector;
+    savedir::String="./",
     ymax::Number=Inf
     )::AbstractVector
 
@@ -466,11 +454,16 @@ function get_h(
                 psi = get_Efield(x, z, nref, n, λ, α, h)
                 push!(psifields, psi)
 
-                figname = "./$nametag-after-propagation.png"
+                figname = "$nametag-after-propagation.png"
                 corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = correlation_method(psi, dx, dz)
-                plot_with_corr(x, z, psi, n, h, corr_h, 
-                                ξ_h, ξv_h, ξvind_h, peakh_h, Pξ_abs_h, 
-                                figname; ymax=ymax)
+                profileplots = plot_with_corr(x, z, psi, n, h, corr_h, 
+                                                ξ_h, ξv_h, ξvind_h, 
+                                                peakh_h, Pξ_abs_h; 
+                                                )
+
+                layout = @layout [grid(1,3); b{0.333w} c{0.666w}]
+                allplots = plot(profileplots..., layout=layout, size=(1400, 1000))
+                savefig(allplots, savedir*figname)
 
                 iter_num += 1
             end
@@ -489,7 +482,7 @@ function plot_mode(
     ξv::AbstractVector,
     λ::Number,
     nref::Number
-    )::Int where T
+    )::AbstractVecOrMat{T} where T
 
     num = length(mode_profiles)
 
@@ -514,12 +507,7 @@ function plot_mode(
                             ))
     end
 
-    n = length(plots)
-    allplot = plot(plots..., dpi=300, layout=grid(n,1), size=(500, 200*n), link=:x)
-
-    savefig(allplot, "./all_hxy.png")
-
-    return 0
+    return plots
 end
 
 function get_mode_profiles_im_dis(
@@ -539,7 +527,6 @@ function get_mode_profiles_im_dis(
     dx = step(x)
     dτ = step(τ)
     k = 2*π / λ
-    savedir = savedir
     weightedβ = ntrial*k
     newinput = uline
     # Get mode 0.
