@@ -1,4 +1,4 @@
-include("../lib-FD-SVBPM-3D-PML.jl")
+include("../lib-FD-SVBPM-3D-noPML.jl")
 
 using .FD_SVBPM_2D
 using Serialization
@@ -6,12 +6,13 @@ using Plots
 
 function main()
 
-    fname = "ex-FD_SVBPM-3D-rib_waveguide/"
+    fname = "ex-FD_SVBPM-3D-noPML/"
     working_dir = joinpath(pwd(), fname)
     cd(working_dir)
     @show working_dir
     # working_dir = pwd()
 
+    #=
     # um = 10^-6 # Never run Simulation with too-small values.
     # nm = 10^-9
 
@@ -20,7 +21,7 @@ function main()
 
     Nx = 201
     Ny = 151
-    Nz = 101
+    Nz = 201
 
     @assert Nx % 2 == 1 # To include x=0.
     @assert Ny % 2 == 1 # To include y=0.
@@ -90,15 +91,11 @@ function main()
     serialize(working_dir*"z.dat", z)
     serialize(working_dir*"$nametag.dat", Efield)
 
-    xzplot = plot_field(x, y, z, Efield, "xz", Int(round(Ny/2)))
-    xyplot = plot_field(x, y, z, Efield, "xy", Int(round(Nz/2)))
-    yzplot = plot_field(x, y, z, Efield, "yz", Int(round(Nx/2)))
-
+    Iplot = plot_field(x, y, z, Efield, "xz", 71)
     layout = @layout [grid(1,3)]
-    allplots = plot([xzplot, xyplot, yzplot]..., layout=layout, size=(1400, 500))
+    allplots = plot([input_plot, n_plot, Iplot]..., layout=layout, size=(1400, 500))
     savefig(allplots, working_dir*"$nametag-profile.png")
 
-    #=
     Pz, ξ, ξvind, ξv, peakh, Pξ_abs= correlation_method(Efield, dx, dz)
 
     n0 = 3.36
