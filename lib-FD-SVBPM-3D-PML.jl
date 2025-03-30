@@ -454,21 +454,24 @@ function plot_field(
     intensity = abs2.(field)
 
     if which_plane == "xy" || which_plane == "yx"
-        slice = intensity[:,:,intercept]
+        ind = argmin(abs.(z .- intercept))
+        slice = intensity[:,:,ind]
         interceptaxis = 'z'
         xaxis = x./um
         yaxis = y./um
         xlabel="x (μm)"
         ylabel="y (μm)"
     elseif which_plane == "xz" || which_plane == "zx"
-        slice = intensity[:,intercept,:]
+        ind = argmin(abs.(y .- intercept))
+        slice = intensity[:,ind,:]
         interceptaxis = 'y'
         xaxis = abs.(z)./um
         yaxis = x./um
         xlabel="z (μm)"
         ylabel="x (μm)"
     elseif which_plane == "yz" || which_plane == "zy"
-        slice = intensity[intercept,:,:]
+        ind = argmin(abs.(x .- intercept))
+        slice = intensity[ind,:,:]
         interceptaxis = 'x'
         xaxis = abs.(z)./um
         yaxis = y./um
@@ -476,11 +479,12 @@ function plot_field(
         ylabel="y (μm)"
     end
 
+    title = "$which_plane plane at $interceptaxis=$(intercept/um) μm"
     power = heatmap(xaxis, yaxis, slice, 
                     dpi=300, clim=(0,1), c=:thermal, 
                     xlabel=xlabel, 
                     ylabel=ylabel,
-                    title="$which_plane plane at $interceptaxis=$intercept")
+                    title=title)
 
     return power
 end

@@ -20,14 +20,14 @@ function main()
 
     Nx = 201
     Ny = 151
-    Nz = 101
+    Nz = 201
 
     @assert Nx % 2 == 1 # To include x=0.
     @assert Ny % 2 == 1 # To include y=0.
 
     Lx = 4*um
     Ly = 15*um
-    Lz = 10*um
+    Lz = 20*um
 
     # dx = 0.05*um
     # dz = 0.2*um
@@ -64,7 +64,7 @@ function main()
     nmin = minimum(real(n))
     nmax = maximum(real(n))
     Δnmax = nmax - nmin
-    criterion = (λ/2 / nmin / Δnmax / 5)
+    criterion = (λ/2 / nmin / Δnmax)
     @assert dz < criterion "dz must be less than $(criterion/um) um." # For details, refer to eq 2.106.
     wx = 0.5*um
     wy = 0.7*um
@@ -90,9 +90,9 @@ function main()
     serialize(working_dir*"z.dat", z)
     serialize(working_dir*"$nametag.dat", Efield)
 
-    xzplot = plot_field(x, y, z, Efield, "xz", Int(round(Ny/2)))
-    xyplot = plot_field(x, y, z, Efield, "xy", Int(round(Nz/2)))
-    yzplot = plot_field(x, y, z, Efield, "yz", Int(round(Nx/2)))
+    xzplot = plot_field(x, y, z, Efield, "xz", 0*um)
+    xyplot = plot_field(x, y, z, Efield, "xy", 8*um)
+    yzplot = plot_field(x, y, z, Efield, "yz", 0*um)
 
     layout = @layout [grid(1,3)]
     allplots = plot([xzplot, xyplot, yzplot]..., layout=layout, size=(1400, 500))
