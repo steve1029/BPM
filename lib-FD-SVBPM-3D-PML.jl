@@ -71,14 +71,13 @@ function get_rib_waveguide_profile(
     x::AbstractVector,
     y::AbstractVector,
     z::AbstractVector,
-    w::Number,
+    w1::Number,
+    w2::Number,
     h::Number,
     d::Number,
     n1::Number,
     n2::Number,
     n3::Number;
-    plot = false,
-    savedir = "./"
     )
 
     Nx = length(x)
@@ -95,33 +94,18 @@ function get_rib_waveguide_profile(
     @assert Ny % 2 == 1 # To include y=0.
 
     cx = Int(ceil(Nx/2))
-    sx = cx + Int(d/dx)
-    ux = sx + Int((h+d)/dx)
+    sx = cx + Int(round(d/dx))
+    ux = sx + Int(round(h/dx))
 
     cy = Int(ceil(Ny/2))
-    sy = (cy-Int(w/dy)):(cy+Int(w/dy))
+    sy = (cy-Int(round(w1/2/dy))):(cy+Int(round(w1/2/dy)))
+    uy = (cy-Int(round(w2/2/dy))):(cy+Int(round(w2/2/dy)))
 
-    n[1:cx, :, :] .= n3
-    n[cx:sx, :, :] .= n2
+    n[ 1:cx, uy, :] .= n3
+    n[cx:sx, uy, :] .= n2
     n[sx:ux, sy, :] .= n2
 
-    nmax = maximum(real.(n))
-    nmin = minimum(real.(n))
-    
-    if plot == true
-        hm = heatmap(y./um, x./um, real.(n[:,:,1]);
-                        dpi=300, 
-                        clim=(nmin, nmax), 
-                        colormap=:tab20,
-                        xlabel="y (μm)", 
-                        ylabel="x (μm)", 
-                        zlabel="index", 
-                        title="Refractive index")
-
-        savefig(savedir*"refractive_index_profile.png")
-    end
-
-    return n, hm
+    return n
     
 end
 
@@ -196,7 +180,8 @@ function get_Efield(
     λ::Number, 
     α::Number, 
     input::Matrix{<:Number};
-    pml = true,
+    pmlx = false,
+    pmly = false,
     pol = "quasi-TM"
     )::Array{<:Number, 3}
 
@@ -213,16 +198,20 @@ function get_Efield(
     Efield = zeros(ComplexF64, Nx, Ny, Nz)
     Efield[:,:,1] = input
 
-    if pml == false
-        P, Q, R, F, G, H = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, onoff="off")
+    if pmlx == true && pmly == false
+        Px, Qx, Rx, Fy, Gy, Hy = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=true, pmly=false)
+    elseif pmlx == false && pmly == true
+        Px, Qx, Rx, Fy, Gy, Hy = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=false, pmly=true)
+    elseif pmlx == true && pmly == true
+        Px, Qx, Rx, Fy, Gy, Hy = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=true, pmly=true)
     else
-        P, Q, R, F, G, H = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, onoff="on")
+        Px, Qx, Rx, Fy, Gy, Hy = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=false, pmly=false)
     end
 
     for step in 2:Nz
         adi = Efield[:,:,step-1]
-        adi = _1st_sub_step(step, α, λ, dx, dz, nref, n, F, G, H, adi;)
-        adi = _2nd_sub_step(step, α, λ, dx, dz, nref, n, P, Q, R, adi;)
+        adi = _1st_sub_step(step, λ, dy, dz, nref, n, Fy, Gy, Hy, adi;)
+        adi = _2nd_sub_step(step, λ, dx, dz, nref, n, Px, Qx, Rx, adi;)
         Efield[:,:,step] = adi
     end
 
@@ -249,7 +238,8 @@ function _pml(
     n::Array{<:Number, 3}, 
     λ::Number;
     pol = "quasi-TM",
-    onoff = "on"
+    pmlx = false,
+    pmly = false 
     )
 
     rc0 = 1.e-16
@@ -282,10 +272,12 @@ function _pml(
     qx = ones(ComplexF64, Nx, Ny, Nz)
     qy = ones(ComplexF64, Nx, Ny, Nz)
 
-    if onoff == "on"
+    if pmlx == true 
         qx[      npml:-1:  1, :, :] = 1 ./ (1 .- ((1im.*σx) ./ (ω .* ε0 .* nxll.^2)))
         qx[end+1-npml: 1:end, :, :] = 1 ./ (1 .- ((1im.*σx) ./ (ω .* ε0 .* nxrr.^2)))
+    end
 
+    if pmly == true 
         qy[:,       npml:-1:  1, :] = 1 ./ (1 .- ((1im.*σy) ./ (ω .* ε0 .* nyll.^2)))
         qy[:, end+1-npml: 1:end, :] = 1 ./ (1 .- ((1im.*σy) ./ (ω .* ε0 .* nyrr.^2)))
     end
@@ -361,48 +353,56 @@ function _1st_sub_step
 """
 function _1st_sub_step(
     step::Int,
-    α::Number,
     λ::Number,
-    dy::Number, 
-    dz::Number, 
+    dy::Number,
+    dz::Number,
     nref::Number,
-    n::Array{<:Number, 3}, 
-    F::Array{<:Number, 3}, 
-    G::Array{<:Number, 3}, 
-    H::Array{<:Number, 3}, 
+    n::Array{<:Number, 3},
+    F::Array{<:Number, 3},
+    G::Array{<:Number, 3},
+    H::Array{<:Number, 3},
     E::Matrix{ComplexF64};
+    pol = "quasi-TM",
     )::Matrix{ComplexF64}
 
     Nx = size(n,1)
     Ny = size(n,2)
 
-    newE = zeros(ComplexF64, Nx, Ny)
+    u_half_step = zeros(ComplexF64, Nx, Ny)
 
-    for i in 1:Nx
-        k0 = 2*π / λ
-        nd = n[i,:,step].^2 .- nref^2
+    if pol == "quasi-TM"
+        # For quasi-TM mode.
+        # F, G, H are defined in _pml function.
 
-        a = (-F[i,:,step] ./ (dy^2))
-        b = (4im*k0*nref/dz) .+ (H[i,:,step] ./ (dy^2)) .- (0.5 .* k0^2 .* nd)
-        c = (-G[i,:,step] ./ (dy^2))
-        A = diagm(-1=>a, 0=>b, 1=>c)
+        for i in 1:Nx
+            k0 = 2*π / λ
+            nd = n[i,:,step].^2 .- nref^2
 
-        D = (4im*k0*nref/dz) .- (H[i,:,step] ./ (dy^2)) .+ (0.5 .* k0^2 .* nd)
-        above = (1 / dy^2) * G[i,:,step]
-        below = (1 / dy^2) * F[i,:,step]
+            aj = (-F[i,:,step] ./ (dy^2))
+            bj = (4im*k0*nref/dz) .+ (H[i,:,step] ./ (dy^2)) .- (0.5 .* k0^2 .* nd)
+            cj = (-G[i,:,step] ./ (dy^2))
+            Aj = diagm(-1=>aj, 0=>bj, 1=>cj)
 
-        B = diagm(-1=>below, 0=>D, 1=>above)
+            Dj = (4im*k0*nref/dz) .- (H[i,:,step] ./ (dy^2)) .+ (0.5 .* k0^2 .* nd)
+            above = (1 / dy^2) * G[i,:,step]
+            below = (1 / dy^2) * F[i,:,step]
 
-        r = B * E[i,:]
-        newE[i,:] = A \ r
+            Bj = diagm(-1=>below, 0=>Dj, 1=>above)
+
+            r = Bj * E[i,:]
+            u_half_step[i,:] = Aj \ r
+        end
+
+    elseif pol == "quasi-TE"
+    # For quasi-TE mode.
+        nothing
     end
 
-    return newE
+    return u_half_step
 end
 
 function _2nd_sub_step(
     step::Int,
-    α::Number,
     λ::Number,
     dx::Number, 
     dz::Number, 
@@ -412,33 +412,41 @@ function _2nd_sub_step(
     Q::Array{<:Number, 3}, 
     R::Array{<:Number, 3}, 
     E::Matrix{ComplexF64};
+    pol = "quasi-TM",
     )::Matrix{ComplexF64}
 
     Nx = size(n,1)
     Ny = size(n,2)
 
-    newE = zeros(ComplexF64, Nx, Ny)
+    u_next_step = zeros(ComplexF64, Nx, Ny)
 
-    for j in 1:Ny
-        k0 = 2*π / λ
-        nd = n[:,j,step].^2 .- nref^2
+    if pol == "quasi-TM"
 
-        a = (-1/dx^2) .* P[:,j,step]
-        b = (4im*k0*nref/dz) .+ (R[:,j,step] ./ dx^2) .- (0.5 .* k0^2 .* nd)
-        c = (-1/dx^2) .* Q[:,j,step]
-        A = diagm(-1=>a, 0=>b, 1=>c)
+        for j in 1:Ny
 
-        D = (4im*k0*nref/dz) .- (R[:,j,step] ./ dx^2) .+ (0.5 .* k0^2 .* nd)
-        above = (1 / dx^2) .* Q[:,j,step]
-        below = (1 / dx^2) .* P[:,j,step]
+            k0 = 2*π / λ
+            nd = n[:,j,step].^2 .- nref^2
 
-        B = diagm(-1=>below, 0=>D, 1=>above)
+            a = (-1/dx^2) .* P[:,j,step]
+            b = (4im*k0*nref/dz) .+ (R[:,j,step] ./ dx^2) .- (0.5 .* k0^2 .* nd)
+            c = (-1/dx^2) .* Q[:,j,step]
+            A = diagm(-1=>a, 0=>b, 1=>c)
 
-        r = B * E[:,j]
-        newE[:,j] = A \ r
+            D = (4im*k0*nref/dz) .- (R[:,j,step] ./ dx^2) .+ (0.5 .* k0^2 .* nd)
+            above = (1 / dx^2) .* Q[:,j,step]
+            below = (1 / dx^2) .* P[:,j,step]
+
+            B = diagm(-1=>below, 0=>D, 1=>above)
+
+            r = B * E[:,j]
+            u_next_step[:,j] = A \ r
+        end
+
+    elseif pol == "quasi-TE"
+        nothing
     end
 
-    return newE
+    return u_next_step
 end
 
 
@@ -448,7 +456,8 @@ function plot_field(
     z::AbstractVector, 
     field::AbstractArray{<:Number, 3},
     which_plane::String,
-    intercept::Number
+    intercept::Number;
+    clim::Tuple{Number, Number} = (-Inf, Inf),
     )
 
     intensity = abs2.(field)
@@ -457,32 +466,38 @@ function plot_field(
         ind = argmin(abs.(z .- intercept))
         slice = intensity[:,:,ind]
         interceptaxis = 'z'
-        xaxis = x./um
-        yaxis = y./um
-        xlabel="x (μm)"
-        ylabel="y (μm)"
+        xaxis = y./um
+        yaxis = x./um
+        xlabel= "y (μm)"
+        ylabel= "x (μm)"
+
     elseif which_plane == "xz" || which_plane == "zx"
         ind = argmin(abs.(y .- intercept))
         slice = intensity[:,ind,:]
         interceptaxis = 'y'
         xaxis = abs.(z)./um
         yaxis = x./um
-        xlabel="z (μm)"
-        ylabel="x (μm)"
+        xlabel= "z (μm)"
+        ylabel= "x (μm)"
+
     elseif which_plane == "yz" || which_plane == "zy"
         ind = argmin(abs.(x .- intercept))
         slice = intensity[ind,:,:]
         interceptaxis = 'x'
         xaxis = abs.(z)./um
         yaxis = y./um
-        xlabel="z (μm)"
-        ylabel="y (μm)"
+        xlabel= "z (μm)"
+        ylabel= "y (μm)"
+        # @show size(intensity)
+        # @show size(slice)
+        # @show size(xaxis)
+        # @show size(yaxis)
     end
 
     title = "$which_plane plane at $interceptaxis=$(intercept/um) μm"
-    power = heatmap(xaxis, yaxis, slice, 
-                    dpi=300, clim=(0,1), c=:thermal, 
-                    xlabel=xlabel, 
+    power = heatmap(xaxis, yaxis, slice,
+                    dpi=300, clim=clim, c=:thermal,
+                    xlabel=xlabel,
                     ylabel=ylabel,
                     title=title)
 
