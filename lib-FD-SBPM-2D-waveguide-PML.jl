@@ -270,9 +270,11 @@ function plot_field(
     field::AbstractMatrix, 
     n0::Number,
     Δn::Number,
-    n::Matrix{ComplexF64}, 
-    input::AbstractVector, 
-    figname::String; savedir="./", save=true)
+    n::AbstractMatrix{<:Number}, 
+    input::AbstractVector,
+    figname::String;
+    savedir="./", 
+    save=true)
     
     intensity = abs2.(field)
     input_abs = (abs.(input).^2) 
@@ -287,7 +289,7 @@ function plot_field(
                     title="Straight waveguide")
     hm2 = heatmap(abs.(z)./um, x./um, real(n), 
                     dpi=300, 
-                    # clim=(n0, n0+Δn), 
+                    clim=(n0, n0+Δn), 
                     xlabel="z (μm)", ylabel="x (μm)", zlabel="index", 
                     color=:blues,
                     title="Refractive index")
@@ -302,7 +304,6 @@ function plot_field(
 
     return plots
 end
-
 
 function plot_with_corr(
     x::AbstractVector,

@@ -1,18 +1,23 @@
-include("FD-SBPM-2D-waveguide-PML.jl")
+include("../lib-FD-SBPM-2D-waveguide-PML.jl")
 
 using .FD_SBPM_2D
 using Serialization
 
 function main()
 
+    fname = "ex-FD_SBPM-2D_PML-symmetric_step_index_waveguide/corr-with-pml/"
+    working_dir = joinpath(pwd(), fname)
+    cd(working_dir)
+    @show working_dir
+
     um = 10^-6
     nm = 10^-9
 
     Nx = 400
-    Nz = 10000
+    Nz = 100
 
     Lx = 20*um
-    Lz = 25000*um
+    Lz = 250*um
 
     x = range(-Lx/2, Lx/2; length=Nx)
     z = range(0, Lz; length=Nz)
@@ -26,7 +31,7 @@ function main()
     n0 = 1.45
     σ = 2*um
     Δn = 0.02
-    n = get_symmetric_Gaussian_index_profile(x, n0, σ, Δn, Nx, Nz)
+    n = get_step_index_profile(x, z, n0, σ, Δn, Nx, Nz)
 
     λ = 850*nm
     k0 = 2*π / λ
@@ -50,8 +55,14 @@ function main()
     peakhname = "peakh_$nametag.dat"
     Pξ_absname = "Pxi_abs_$nametag.dat"
 
-    Efield = get_Efield(x, z, nt, n, λ, α, Eline)
+    Efield = get_Efield(x, z, nt, n, λ, α, Eline; pml=true)
 
+    plot_field( x, z, Efield, n0, Δn, n, Eline,
+                "field_profile.png";
+                savedir=working_dir,
+                save=true)
+
+    #=
     serialize("x.dat", x)
     serialize("z.dat", z)
     serialize("Efield.dat", Efield)
@@ -96,6 +107,7 @@ function main()
 
     mode_transverse_profiles = deserialize("./mode_transverse_profiles.dat")
     plot_mode(x, mode_transverse_profiles, ξv, β)
+    =#
     println("Simulation finished.")
 end
 

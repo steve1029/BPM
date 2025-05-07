@@ -5,7 +5,7 @@ using Serialization
 
 function main()
 
-    fname = "ex-FD_SBPM-2D_PML-gaussian_index_waveguide/"
+    fname = "ex-FD_SBPM-2D_PML-gaussian_index_waveguide/corr-without-pml/"
     working_dir = joinpath(pwd(), fname)
     cd(working_dir)
     @show working_dir
@@ -14,10 +14,10 @@ function main()
     nm = 10^-9
 
     Nx = 400
-    Nz = 10000
+    Nz = 100
 
     Lx = 20*um
-    Lz = 25000*um
+    Lz = 250*um
 
     x = range(-Lx/2, Lx/2; length=Nx)
     z = range(0, Lz; length=Nz)
@@ -55,13 +55,18 @@ function main()
     peakhname = "peakh_$nametag.dat"
     Pξ_absname = "Pxi_abs_$nametag.dat"
 
-    #=
-    Efield = get_Efield(x, z, nt, n, λ, α, Eline)
+    Efield = get_Efield(x, z, nt, n, λ, α, Eline; pml=false)
+
+    plot_field( x, z, Efield, n0, Δn, n, Eline,
+                "FD_SBPM-2D-waveguide-PML.png";
+                savedir=working_dir,
+                save=true)
 
     serialize("x.dat", x)
     serialize("z.dat", z)
     serialize("Efield.dat", Efield)
 
+    #=
     Pz, ξ, ξvind, ξv, peakh, Pξ_abs= correlation_method(Efield, dx, dz)
 
     ymax = maximum(Pξ_abs)*1.05
@@ -77,7 +82,6 @@ function main()
     serialize(ymaxname, ymax)
     serialize(peakhname, peakh)
     serialize(Pξ_absname, Pξ_abs)
-    =#
 
     x = deserialize("./x.dat")
     z = deserialize("./z.dat")
@@ -103,6 +107,7 @@ function main()
 
     mode_transverse_profiles = deserialize("./mode_transverse_profiles.dat")
     plot_mode(x, mode_transverse_profiles, ξv, λ, n0)
+    =#
     println("Simulation finished.")
 end
 

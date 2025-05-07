@@ -13,9 +13,10 @@ using Printf
 const um = 1.
 const nm = 10^-3
 
-export get_gaussian_input, 
+export  get_gaussian_input, 
         get_rib_waveguide_profile,
         get_step_index_profile, 
+        get_S_bend_profile,
         get_symmetric_Gaussian_index_profile,
         _to_next_z, 
         _pml, 
@@ -65,6 +66,51 @@ function get_gaussian_input(
     end
 
     return Eplane, hm
+end
+
+function get_S_bend_profile(
+    x::AbstractVector,
+    y::AbstractVector,
+    z::AbstractVector,
+    nc::Number,
+    ns::Number,
+    Δn::Number,
+    d::Number,
+    w::Number;
+)
+    
+    Nx = length(x)
+    Ny = length(y)
+    Nz = length(z)
+
+    dx = step(x)
+    dy = step(y)
+    dz = step(z)
+
+    n = ones(ComplexF64, Nx, Ny, Nz) .* nc
+
+    @assert Nx % 2 == 1 # To include x=0.
+    @assert Ny % 2 == 1 # To include y=0.
+
+    for i in 1:Nx
+        for j in 1:Ny
+
+            if x[i] < 0
+
+                if y[j] < -w/2
+                    n[i,j,:] .= ns + (Δn * exp(-(x[i]/d)^2) * exp(-((y[j]+(w/2))/d)^2))
+                elseif y[j] < w/2 && y[j] > -w/2
+                    n[i,j,:] .= ns + (Δn * exp(-(x[i]/d)^2))
+                elseif y[j] > w/2
+                    n[i,j,:] .= ns + (Δn * exp(-(x[i]/d)^2) * exp(-((y[j]-(w/2))/d)^2))
+                end
+
+            end
+        end
+    end
+
+    return n
+    
 end
 
 function get_rib_waveguide_profile(
@@ -182,7 +228,6 @@ function get_Efield(
     input::Matrix{<:Number};
     pmlx = false,
     pmly = false,
-    pol = "quasi-TM"
     )::Array{<:Number, 3}
 
     npml = 10
@@ -198,48 +243,21 @@ function get_Efield(
     Efield = zeros(ComplexF64, Nx, Ny, Nz)
     Efield[:,:,1] = input
 
-    if pol == "quasi-TM"
+    if pmlx == true && pmly == false
+        Py, Qy, Ry, Fx, Gx, Hx = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pmlx=true, pmly=false)
+    elseif pmlx == false && pmly == true
+        Py, Qy, Ry, Fx, Gx, Hx = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pmlx=false, pmly=true)
+    elseif pmlx == true && pmly == true
+        Py, Qy, Ry, Fx, Gx, Hx = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pmlx=true, pmly=true)
+    else
+        Py, Qy, Ry, Fx, Gx, Hx = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pmlx=false, pmly=false)
+    end
 
-        if pmlx == true && pmly == false
-            Px, Qx, Rx, Fy, Gy, Hy = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=true, pmly=false)
-        elseif pmlx == false && pmly == true
-            Px, Qx, Rx, Fy, Gy, Hy = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=false, pmly=true)
-        elseif pmlx == true && pmly == true
-            Px, Qx, Rx, Fy, Gy, Hy = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=true, pmly=true)
-        else
-            Px, Qx, Rx, Fy, Gy, Hy = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=false, pmly=false)
-        end
-
-        for step in 2:Nz
-            adi = Efield[:,:,step-1]
-            adi = _1st_sub_step_quasi_TM(step, λ, dy, dz, nref, n, Fy, Gy, Hy, adi;)
-            adi = _2nd_sub_step_quasi_TM(step, λ, dx, dz, nref, n, Px, Qx, Rx, adi;)
-            Efield[:,:,step] = adi
-        end
-
-    elseif pol == "quasi-TE"
-
-        if pmlx == true && pmly == false
-            Py, Qy, Ry, Fx, Gx, Hx = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=true, pmly=false)
-        elseif pmlx == false && pmly == true
-            Py, Qy, Ry, Fx, Gx, Hx = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=false, pmly=true)
-        elseif pmlx == true && pmly == true
-            Py, Qy, Ry, Fx, Gx, Hx = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=true, pmly=true)
-        else
-            Py, Qy, Ry, Fx, Gx, Hx = _pml(Nx, Ny, Nz, npml, dx, dy, n, λ; pol=pol, pmlx=false, pmly=false)
-        end
-
-        # @show size(Py)
-        # @show size(Qy)
-        # @show size(Ry)
-
-        for step in 2:Nz
-            adi = Efield[:,:,step-1]
-            adi = _1st_sub_step_quasi_TE(step, λ, dy, dz, nref, n, Py, Qy, Ry, adi;)
-            adi = _2nd_sub_step_quasi_TE(step, λ, dx, dz, nref, n, Fx, Gx, Hx, adi;)
-            Efield[:,:,step] = adi
-        end
-
+    for step in 2:Nz
+        adi = Efield[:,:,step-1]
+        adi = _1st_sub_step_scalar(step, λ, dy, dz, nref, n, Py, Qy, Ry, adi;)
+        adi = _2nd_sub_step_scalar(step, λ, dx, dz, nref, n, Fx, Gx, Hx, adi;)
+        Efield[:,:,step] = adi
     end
 
     return Efield
@@ -264,7 +282,6 @@ function _pml(
     dy::Number,
     n::Array{<:Number, 3}, 
     λ::Number;
-    pol = "quasi-TM",
     pmlx = false,
     pmly = false 
     )
@@ -312,8 +329,8 @@ function _pml(
     qxp = qx[2:end  ,:,:]
     qxm = qx[1:end-1,:,:]
 
-    nxp = n[2:end  ,:,:]
-    nxm = n[1:end-1,:,:]
+    # nxp = n[2:end  ,:,:]
+    # nxm = n[1:end-1,:,:]
 
     qyp = qy[:,2:end  ,:]
     qym = qy[:,1:end-1,:]
@@ -321,149 +338,37 @@ function _pml(
     nyp = n[:,2:end  ,:]
     nym = n[:,1:end-1,:]
 
-    if pol == "quasi-TM"
+    Ry = zeros(ComplexF64, Nx, Ny, Nz) 
+    Hx = zeros(ComplexF64, Nx, Ny, Nz) 
 
-        Rx = zeros(ComplexF64, Nx, Ny, Nz) 
-        Hy = zeros(ComplexF64, Nx, Ny, Nz) 
+    qyn = (qyp .+ qym)./(nyp.^2 .+ nym.^2)
 
-        qxn = (qxp .+ qxm)./(nxp.^2 .+ nxm.^2)
+    Py = qyp .* qyn .* (nym.^2)
+    Qy = qym .* qyn .* (nyp.^2)
 
-        Px = qxp .* qxn .* (nxm.^2)
-        Qx = qxm .* qxn .* (nxp.^2)
+    Ry[:,2:end  ,:] .+= qyp .* qyn .* (nyp.^2)
+    Ry[:,1:end-1,:] .+= qym .* qyn .* (nym.^2)
 
-        Rx[2:end  ,:,:] .+= qxp .* qxn .* (nxp.^2)
-        Rx[1:end-1,:,:] .+= qxm .* qxn .* (nxm.^2)
+    Fx = qxp .* (qxp .+ qxm) ./ 2
+    Gx = qxm .* (qxm .+ qxp) ./ 2
 
-        Fy = qyp .* (qyp .+ qym) ./ 2
-        Gy = qym .* (qym .+ qyp) ./ 2
+    Hx .+= qx.^2
+    Hx[2:end  ,:,:] += qxp .* qxm ./ 2
+    Hx[1:end-1,:,:] += qxm .* qxp ./ 2
 
-        Hy .+= qy.^2
-        Hy[:,2:end  ,:] += qyp .* qym ./ 2
-        Hy[:,1:end-1,:] += qym .* qyp ./ 2
-
-        return Px, Qx, Rx, Fy, Gy, Hy
-
-    elseif pol == "quasi-TE"
-
-        Ry = zeros(ComplexF64, Nx, Ny, Nz) 
-        Hx = zeros(ComplexF64, Nx, Ny, Nz) 
-
-        qyn = (qyp .+ qym)./(nyp.^2 .+ nym.^2)
-
-        Py = qyp .* qyn .* (nym.^2)
-        Qy = qym .* qyn .* (nyp.^2)
-
-        Ry[:,2:end  ,:] .+= qyp .* qyn .* (nyp.^2)
-        Ry[:,1:end-1,:] .+= qym .* qyn .* (nym.^2)
-
-        Fx = qxp .* (qxp .+ qxm) ./ 2
-        Gx = qxm .* (qxm .+ qxp) ./ 2
-
-        Hx .+= qx.^2
-        Hx[2:end  ,:,:] += qxp .* qxm ./ 2
-        Hx[1:end-1,:,:] += qxm .* qxp ./ 2
-
-        return Py, Qy, Ry, Fx, Gx, Hx
-
-    end
+    return Py, Qy, Ry, Fx, Gx, Hx
 
 end
 
 """
-function _1st_sub_step_quasi_TM
+function _1st_sub_step_scalar
     In this function, we used 'exp(i(wt-kr))' notation.
 
 # Arguments
 # Returns
 # Example
 """
-function _1st_sub_step_quasi_TM(
-    step::Int,
-    λ::Number,
-    dy::Number,
-    dz::Number,
-    nref::Number,
-    n::Array{<:Number, 3},
-    F::Array{<:Number, 3},
-    G::Array{<:Number, 3},
-    H::Array{<:Number, 3},
-    E::Matrix{ComplexF64};
-    )::Matrix{ComplexF64}
-
-    Nx = size(n,1)
-    Ny = size(n,2)
-
-    u_half_step = zeros(ComplexF64, Nx, Ny)
-
-    for i in 1:Nx
-        k0 = 2*π / λ
-        nd = n[i,:,step].^2 .- nref^2
-
-        aj = (-F[i,:,step] ./ (dy^2))
-        bj = (4im*k0*nref/dz) .+ (H[i,:,step] ./ (dy^2)) .- (0.5 .* k0^2 .* nd)
-        cj = (-G[i,:,step] ./ (dy^2))
-        Aj = diagm(-1=>aj, 0=>bj, 1=>cj)
-
-        Dj = (4im*k0*nref/dz) .- (H[i,:,step] ./ (dy^2)) .+ (0.5 .* k0^2 .* nd)
-        above = (1 / dy^2) * G[i,:,step]
-        below = (1 / dy^2) * F[i,:,step]
-
-        Bj = diagm(-1=>below, 0=>Dj, 1=>above)
-
-        r = Bj * E[i,:]
-        u_half_step[i,:] = Aj \ r
-    end
-    return u_half_step
-end
-
-function _2nd_sub_step_quasi_TM(
-    step::Int,
-    λ::Number,
-    dx::Number, 
-    dz::Number, 
-    nref::Number,
-    n::Array{<:Number, 3}, 
-    P::Array{<:Number, 3}, 
-    Q::Array{<:Number, 3}, 
-    R::Array{<:Number, 3}, 
-    E::Matrix{ComplexF64};
-    )::Matrix{ComplexF64}
-
-    Nx = size(n,1)
-    Ny = size(n,2)
-
-    u_next_step = zeros(ComplexF64, Nx, Ny)
-
-    for j in 1:Ny
-        k0 = 2*π / λ
-        nd = n[:,j,step].^2 .- nref^2
-
-        a = (-1/dx^2) .* P[:,j,step]
-        b = (4im*k0*nref/dz) .+ (R[:,j,step] ./ dx^2) .- (0.5 .* k0^2 .* nd)
-        c = (-1/dx^2) .* Q[:,j,step]
-        A = diagm(-1=>a, 0=>b, 1=>c)
-
-        D = (4im*k0*nref/dz) .- (R[:,j,step] ./ dx^2) .+ (0.5 .* k0^2 .* nd)
-        above = (1 / dx^2) .* Q[:,j,step]
-        below = (1 / dx^2) .* P[:,j,step]
-
-        B = diagm(-1=>below, 0=>D, 1=>above)
-
-        r = B * E[:,j]
-        u_next_step[:,j] = A \ r
-    end
-    return u_next_step
-end
-
-"""
-function _1st_sub_step_quasi_TE
-    In this function, we used 'exp(i(wt-kr))' notation.
-
-# Arguments
-# Returns
-# Example
-"""
-function _1st_sub_step_quasi_TE(
+function _1st_sub_step_scalar(
     step::Int,
     λ::Number,
     dy::Number,
@@ -511,7 +416,7 @@ function _1st_sub_step_quasi_TE(
     return u_half_step
 end
 
-function _2nd_sub_step_quasi_TE(
+function _2nd_sub_step_scalar(
     step::Int,
     λ::Number,
     dx::Number, 

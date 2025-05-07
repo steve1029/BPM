@@ -5,7 +5,7 @@ using Serialization
 
 function main()
 
-    fname = "ex-FD_SBPM-2D_PML-asymmetric_step_index_waveguide/"
+    fname = "ex-FD_SBPM-2D_PML-asymmetric_step_index_waveguide/corr-without-pml/"
     working_dir = joinpath(pwd(), fname)
     cd(working_dir)
     @show working_dir
@@ -17,12 +17,12 @@ function main()
     nm = 10^-3
 
     Nx = 201
-    Nz = 20000
+    Nz = 201
 
     @assert Nx % 2 == 1 # To include x=0.
 
     Lx = 5*um
-    Lz = 4000*um
+    Lz = 20*um
 
     # dx = 0.05*um
     # dz = 0.2*um
@@ -39,9 +39,9 @@ function main()
     @show dx / um
     @show dz / um
 
-    n0 = 1.45
+    n0 = 1.0
     loc_discont = [-2.5*um, -0.3*um, 0.3*um, 2.5*um]
-    refractiveindice = [1.45, 1.95, 1]
+    refractiveindice = [n0, 1.2, 1.0]
     n = get_step_index_profile(x, z,
             loc_discont,
             refractiveindice;
@@ -53,7 +53,9 @@ function main()
     k0 = 2*π / λ
     β = k0 * n0
     Δnmax = maximum(real(n)) - n0
-    @assert dz < (λ/2 / n0 / Δnmax / 5) # For details, refer to eq 2.106.
+    dzlim = (λ/2 / n0 / Δnmax / 5)
+    @show dzlim / um
+    @assert dz < dzlim # For details, refer to eq 2.106.
     w = 0.5*um
     xshift = 0*um
     Eline = get_gaussian_input(x, xshift, w)
@@ -72,8 +74,11 @@ function main()
     peakhname = "peakh_$nametag.dat"
     Pξ_absname = "Pxi_abs_$nametag.dat"
 
-    Efield = get_Efield(x, z, nt, n, λ, α, Eline)
+    Efield = get_Efield(x, z, nt, n, λ, α, Eline, pml=false)
 
+    plot_field(x, z, Efield, n0, Δnmax, n, Eline, "field_profile.png"; savedir=working_dir)
+
+    #=
     serialize(working_dir*"x.dat", x)
     serialize(working_dir*"z.dat", z)
     serialize(working_dir*"Efield.dat", Efield)
@@ -121,6 +126,7 @@ function main()
 
     mode_transverse_profiles = deserialize(modename)
     plot_mode(x, mode_transverse_profiles, ξv, λ, n0)
+    =#
     println("Simulation finished.")
 end
 
