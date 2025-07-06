@@ -1,4 +1,4 @@
-include("../lib-FD-SVBPM-TE-TM-waveguide-PML.jl")
+include("../lib-2D-FD-SVBPM-waveguide-PML-TE-TM.jl")
 
 using .FD_SVBPM_2D
 using Serialization

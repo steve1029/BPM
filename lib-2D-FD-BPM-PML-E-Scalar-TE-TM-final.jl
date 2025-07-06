@@ -13,15 +13,15 @@ using Printf
 const um = 1.
 const nm = 10^-3
 
-export get_gaussian_input, 
-        get_step_index_profile, 
+export get_gaussian_input,
+        get_step_index_profile,
         get_symmetric_Gaussian_index_profile,
-        get_Efield, 
-        correlation_method, 
-        plot_field, 
-        plot_with_corr, 
-        get_h, 
-        plot_mode, 
+        get_Efield,
+        correlation_method,
+        plot_field,
+        plot_with_corr,
+        get_h,
+        plot_mode,
         get_mode_profiles_im_dis
 
 function get_gaussian_input(
@@ -101,9 +101,9 @@ function get_Efield(
     n::Matrix{ComplexF64}, 
     λ::Number, 
     α::Number, 
-    input::Vector{ComplexF64};
-    pml = true,
-    pol = "TE"
+    input::Vector{ComplexF64},
+    pol::String,
+    pml::Bool,
     )::Matrix{ComplexF64}
 
     npml = 10
@@ -118,15 +118,22 @@ function get_Efield(
     Efield[:,1] = input
 
     if pml == false
-        M = ones(eltype(Efield), Nx-1, Nz)
-        N = ones(eltype(Efield), Nx-1, Nz)
-        R = ones(eltype(Efield), Nx, Nz)
+        # M = ones(eltype(Efield), Nx-1, Nz)
+        # N = ones(eltype(Efield), Nx-1, Nz)
+        # R = ones(eltype(Efield), Nx, Nz) .* 2
+        # println("No PML applied.")
+        M, N, R = _pml(Nx, Nz, npml, dx, n, λ; pol=pol, turnon=false)
     else
-        M, N, R = _pml(Nx, Nz, npml, dx, n, λ; pol=pol)
+        M, N, R = _pml(Nx, Nz, npml, dx, n, λ; pol=pol, turnon=true)
     end
 
     for step in 2:Nz
-        Efield[:,step] = _to_next_z(step, α, λ, dx, dz, nref, n, M, N, R, Efield[:,step-1];)
+        Efield[:,step] = _to_next_z(step, α, λ, 
+                                        dx, dz, 
+                                        nref, n, 
+                                        M, N, R, 
+                                        Efield[:,step-1];
+                                    )
     end
 
     return Efield
@@ -148,8 +155,12 @@ function _pml(
     dx::Number,
     n::Matrix{ComplexF64}, 
     λ::Number;
-    pol = "TE"
+    pol::String="TM",
+    turnon::Bool=true
     )::Tuple{Matrix{ComplexF64}, Matrix{ComplexF64}, Matrix{ComplexF64}}
+
+    @assert pol == "TE" || pol == "TM" || pol == "Scalar" "Invalid polarization type. Use 'TE', 'TM' or 'Scalar'."
+    @assert turnon == true || turnon == false "Invalid PML option. Use 'true' or 'false'."
 
     rc0 = 1.e-16
     μ0 = 4*π*10^-7
@@ -159,9 +170,14 @@ function _pml(
     ω = 2*π*c / λ
 
     go = 2. # grading order.
-    # bdwx = (npml-1) * dx
-    # σmax = -(go+1) * log(rc0) / (2*imp*bdwx)
-    σmax = 5*ε0*ω
+    bdwx = (npml-1) * dx
+
+    if turnon == true
+        σmax = -(go+1) * log(rc0) / (2*imp*bdwx)
+        # σmax = 5*ε0*ω
+    else
+        σmax = 0
+    end
 
     loc = range(0, 1; length=npml)
     σx = σmax .* (loc.^go)
@@ -232,12 +248,12 @@ function _to_next_z(
     k0 = 2*π / λ
     nd = n[:,step].^2 .- nref^2
 
-    a = (-α/dx^2) .* M[:, step]
     b = (2im*k0*nref/dz) .+ (α.* R[:, step] ./ dx^2) .- (α.*nd.*k0^2)
+    a = (-α/dx^2) .* M[:, step]
     c = (-α/dx^2) .* N[:, step]
     A = diagm(-1=>a, 0=>b, 1=>c)
 
-    D = (2im*k0*nref/dz) .- ((1-α)/dx^2 .* R[:, step]) .+ (1-α)*k0^2 .* nd
+    D = (2im*k0*nref/dz) .- ((1-α)/dx^2 .* R[:, step]) .+ ((1-α)*k0^2 .* nd)
     above = ((1-α) / dx^2) .* N[:, step]
     below = ((1-α) / dx^2) .* M[:, step]
 
@@ -286,9 +302,9 @@ function correlation_method(
 
     ξvind = pks.indices
     ξv = ξ[ξvind]
-    peakh = pks.heights
+    modal_weights = sqrt.(pks.heights)
 
-    return Pz, ξ, ξvind, ξv, peakh, Pξ_abs 
+    return Pz, ξ, ξvind, ξv, modal_weights, Pξ_abs 
 end
 
 function plot_field(
@@ -383,7 +399,9 @@ function get_h(
     nref::Number,
     n::Matrix{ComplexF64},
     λ::Number,
-    ξv::AbstractVector;
+    ξv::AbstractVector,
+    pol::String,
+    pml::Bool;
     savedir::String="./",
     ymax::Number=Inf
     )::AbstractVector
@@ -405,7 +423,7 @@ function get_h(
     k0 = 2*π/λ
     β = nref*k0
     βs = ξv .+ β
-    neff = (β.+ξv)./k0
+    neff = (β.-ξv)./k0
 
     mode_transverse_profiles = []
     # h = Vector{eltype(Efield)}(0+0im, length(x))
@@ -459,7 +477,9 @@ function get_h(
                 # if iter_num == (mode_num-1)
                 # end
 
-                psi = get_Efield(x, z, nref, n, λ, α, h)
+                psi = get_Efield(x, z, 
+                                    nref, n, λ, α, h,
+                                    pol, pml)
                 push!(psifields, psi)
 
                 figname = "$nametag-after-propagation.png"
@@ -522,39 +542,86 @@ function get_mode_profiles_im_dis(
     x::AbstractVector,
     τ::AbstractVector,
     uline::AbstractVector,
+    pol::String,
     n::AbstractMatrix, 
     ntrial::Number,
     λ::Number,
-    α::Number,
-    iternum::Number;
-    mode = 0,
+    α::Number;
+    iternum::Number=2,
+    modenum = 0,
     figsave = true,
+    nametag::String="",
     savedir = "./"
     )
 
     dx = step(x)
     dτ = step(τ)
     k = 2*π / λ
-    weightedβ = ntrial*k
+    # weightedβ = ntrial*k
     newinput = uline
+
     # Get mode 0.
     for i in 1:iternum
-        ufield = get_Efield(x, τ, ntrial, n, λ, α, newinput; pml=false)
-        af = ufield[:,end]
+        ufield = get_Efield(x, τ, 
+                            ntrial, n, λ, α, 
+                            newinput, 
+                            pol,
+                            false
+                            )
 
-        weightedξv = real((log(sum(af)*dx) - log(sum(ufield[:,end-1])*dx))*1im/dτ)
-        weightedβ += weightedξv
+        weightedξv = real.((log.(vec(sum(ufield[:,2:end  ], dims=1)).*dx) - 
+                            log.(vec(sum(ufield[:,1:end-1], dims=1)).*dx)).*(1im/dτ))
 
-        figname = "get_mode_$mode-trial_$i.png"
-        plot_im_dis(x, τ, newinput, ufield, af, ntrial, figname; 
+        # @show size(ufield[:,2:end])
+        # @show size(weightedξv)
+        # if weightedξv > 0
+            # println("Numerical error stacked up! \
+                    # Choose ntrial \
+                    # lower than the one you are using.")
+            # break
+        # end
+        weightedβ = weightedξv .+ (ntrial*k)
+
+        zlast = real(τ[end]*(-1im))
+        af = ufield[:,end] ./ exp(weightedξv[end]*zlast)
+
+        modeweight = sqrt(sum(af .* conj.(af)))
+        modefunc = af ./ modeweight
+
+        figname = "$nametag-get-mode_$modenum-trial_$i.png"
+
+        plot_im_dis(x, τ, 
+                    newinput, 
+                    ufield, 
+                    modenum,
+                    modeweight, 
+                    modefunc,
+                    ntrial,
+                    k,
+                    weightedβ,
+                    figname; 
                     savedir=savedir,
-                    figsave=figsave)
+                    figsave=figsave,
+                    )
 
-        st = @sprintf("ntrial=%9.6f, weightedξv/k=%9.6f, redefined n =%9.6f\n", 
-                        ntrial, weightedξv/k, weightedβ/k)
+        # inputplot, Iplot, nplot = plot_field(x, τ, ufield, n, newinput)
+        # layout = @layout [grid(1,3)]
+        # allplots = plot([inputplot, nplot, Iplot]..., layout=layout, size=(1400, 500))
+        # savefig(allplots, savedir*figname)
+
+        st = @sprintf( "Trial %2d: \
+                        ntrial=%9.6f, \
+                        weightedξv/k=%9.6f, \
+                        redefine ntrial as:%9.6f\n",
+                        i,
+                        ntrial, 
+                        weightedξv[end]/k, 
+                        weightedβ[end]/k
+                        )
+ 
         print(st)
 
-        ntrial = weightedβ/k
+        ntrial = weightedβ[end]/k
         newinput .-= af
     end
 
@@ -564,46 +631,84 @@ end # function end.
 function plot_im_dis(
     x, 
     τ, 
-    uline, 
-    ufield, 
-    af,
-    ntrial,
+    uline::AbstractVector, 
+    ufield::AbstractMatrix,
+    modenum::Int,
+    modeweight::Number,
+    modefunc::AbstractVector,
+    ntrial::Number,
+    wavenum::Number,
+    weightedβ::AbstractVector,
     figname;
     figsave=true,
     savedir="./",
     )
 
+    # @show size(weightedβ)
     intensity = abs2.(ufield)
     input_abs = (abs.(uline).^2) 
+    effindex = weightedβ[end]/wavenum
 
-    normed_input_abs = input_abs./maximum(input_abs)
-    iplot = plot(x./um, input_abs, 
+    # normed_input_abs = input_abs./maximum(input_abs)
+    weighted_mode = modeweight.*modefunc
+    tit = "\$a_$(modenum)f_$(modenum)(x,y)\$"
+    nst = @sprintf("ntrial=%8.6f", ntrial)
+
+    inplot = plot(x./um, input_abs, 
                             label="input beam", 
-                            title="Input",
-                            xlabel="z (μm)",
-                            ylabel="x (μm)",
+                            title="Input, $nst",
+                            xlabel="x (μm)",
                             lw=1.5, dpi=300,)
 
-    Eplot = heatmap(abs.(τ)./um, x./um, intensity, 
+    irplot = heatmap(abs.(τ)./um, x./um, intensity, 
                     dpi=300, 
                     clim=(0,Inf), 
                     c=:thermal, 
-                    xlabel="z (μm)", ylabel="x (μm)", zlabel="Intensity", 
+                    xlabel="z (μm)", 
+                    ylabel="x (μm)", 
+                    label="Intensity", 
                     title="Straight waveguide")
 
-    nst = @sprintf("ntrial=%8.6f", ntrial)
-    fplot = plot(x./um, 
-                    real.(af),
-                    label="f(x,∞)", 
-                    title="Output,"*nst,
-                    xlabel="τ",
-                    ylabel="x (μm)",
+    afplot = plot(x./um, 
+                    real.(weighted_mode),
+                    label="\$β_$(modenum)/k=$(effindex)\$", 
+                    title=tit,
+                    xlabel="x (μm)",
                     lw=1.5, 
-                    dpi=300)
-    # annotate!(fplot, 5, -0.2, text(nst, 12, :blue))
-    plots = [iplot, Eplot, fplot]
-    layout = @layout [grid(1,3)]
-    plot(plots..., layout=layout, size=(1400, 500))
+                    dpi=300
+                    )
+
+    hplot = plot(   x./um, 
+                    real.(uline .- weighted_mode), 
+                    title="Input - \$a_$(modenum)f_$(modenum)(x,y), \$",
+                    xlabel="x (μm)",
+                    lw=1.5, 
+                    dpi=300
+                    )
+
+    βplot = plot(   abs.(τ[2:end]) ./ um,
+                    weightedβ ./ wavenum,
+                    label="\$β/k→$(weightedβ[end]/wavenum)\$",
+                    title="propagation constant convergence",
+                    xlabel="τ",
+                    ylabel="Effective index"
+                )
+    # fplot = plot(x./um, 
+    #                 real.(modefunction), 
+    #                 label="f(x,∞)", 
+    #                 title="\$f_$(iternum-1)(x,y), \$"*nst,
+    #                 xlabel="τ",
+    #                 ylabel="x (μm)",
+    #                 lw=1.5, 
+    #                 dpi=300
+    #                 )
+    # annotate!(fplot, 5, -0.2, text("\$a_$(iternum-1)=$weight", 12, :blue))
+    plots = [afplot, βplot, inplot, irplot, hplot]
+    layout = @layout [grid(2,3)]
+    plot(plots..., 
+            layout=layout, 
+            size=(1500, 1000)
+        )
 
     if figsave == true
         savefig(savedir*figname)

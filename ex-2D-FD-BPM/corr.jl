@@ -47,9 +47,9 @@ function main()
     target = 0.12
     nt = target/k0 + n0
 
-    # pol = "Scalar" # "TE" or "TM" or "Scalar"
+    pol = "Scalar" # "TE" or "TM" or "Scalar"
     # pol = "TE" # "TE" or "TM" or "Scalar"
-    pol = "TM" # "TE" or "TM" or "Scalar" 
+    # pol = "TM" # "TE" or "TM" or "Scalar" 
 
     if pol == "TE"
         nametag = "Ey"

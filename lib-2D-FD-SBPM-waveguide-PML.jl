@@ -13,11 +13,16 @@ using Printf
 const um = 1.
 const nm = 10^-3
 
-export get_gaussian_input, get_step_index_profile, 
+export get_gaussian_input, 
+        get_step_index_profile, 
         get_symmetric_Gaussian_index_profile,
-        _to_next, _pml, get_Efield, correlation_method, 
-        plot_field, plot_with_corr, 
-        get_h, plot_mode, get_mode_profiles_im_dis
+        get_Efield, 
+        correlation_method, 
+        plot_field, 
+        plot_with_corr, 
+        get_h, 
+        plot_mode, 
+        get_mode_profiles_im_dis
 
 function get_gaussian_input(
     x::AbstractVector, 
@@ -152,9 +157,9 @@ function _pml(
     ω = 2*π*c / λ
 
     go = 2. # grading order.
-    # bdwx = (npml-1) * dx
-    # σmax = -(go+1) * log(rc0) / (2*imp*bdwx)
-    σmax = 5*ε0*ω
+    bdwx = (npml-1) * dx
+    σmax = -(go+1) * log(rc0) / (2*imp*bdwx)
+    # σmax = 5*ε0*ω
 
     loc = range(0, 1; length=npml)
     σx = σmax .* (loc.^go)
@@ -204,7 +209,7 @@ function _to_next(
     k0 = 2*π / λ
     nd = n[:,step].^2 .- nt^2
 
-    b = (2*α.* R[:, step] /dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*nt/dz)
+    b = (2*α.* R[:, step] ./ dx^2) .- (α.*nd.*k0^2) .+ (2im*k0*nt/dz)
     a = (-α/dx^2) .* Tm[:, step]
     c = (-α/dx^2) .* Tp[:, step]
     A = diagm(-1=>a, 0=>b, 1=>c)
@@ -529,13 +534,16 @@ function get_mode_profiles_im_dis(
     dx = step(x)
     dτ = step(τ)
     k = 2*π / λ
-    savedir = savedir
     weightedβ = ntrial*k
     newinput = uline
 
     # Get mode 0.
     for i in 1:iternum
-        ufield = get_Efield(x, τ, ntrial, n, λ, α, newinput; pml=false)
+        ufield = get_Efield(x, τ, 
+                            ntrial, n, λ, α, 
+                            newinput; 
+                            pml=false
+                            )
 
         weightedξv = real(( log(sum(ufield[:,end  ])*dx) -
                             log(sum(ufield[:,end-1])*dx))*1im/dτ)
@@ -551,7 +559,11 @@ function get_mode_profiles_im_dis(
         # @show exp(weightedξv*zlast)
 
         figname = "get_mode_$mode-trial_$i.png"
-        plot_im_dis(x, τ, newinput, ufield, i, af, ntrial, figname; 
+
+        plot_im_dis(x, τ, newinput, 
+                    ufield, i, af, 
+                    ntrial, 
+                    figname; 
                     savedir=savedir,
                     figsave=figsave)
 
@@ -612,7 +624,9 @@ function plot_im_dis(
                             title="\$a_$(iternum-1)f_$(iternum-1)(x,y), \$"*nst,
                             xlabel="τ",
                             ylabel="x (μm)",
-                            lw=1.5, dpi=300,)
+                            lw=1.5, 
+                            dpi=300
+                            )
     # annotate!(fplot, 5, -0.2, text(nst, 12, :blue))
     plots = [inplot, irplot, afplot]
     layout = @layout [grid(1,3)]
