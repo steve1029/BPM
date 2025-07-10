@@ -1,6 +1,7 @@
 module FD_BPM_2D
 
 using Plots
+using Plots.PlotMeasures
 using LinearAlgebra
 using FFTW
 using Peaks
@@ -19,7 +20,9 @@ export get_gaussian_input,
         get_Efield,
         correlation_method,
         plot_field,
-        plot_with_corr,
+        plot_analysis,
+        plot_various_corr,
+        plot_transverse_profile,
         get_h,
         plot_mode,
         get_mode_profiles_im_dis
@@ -338,8 +341,32 @@ function plot_field(
     return inputplot, hm1, hm2
 end
 
+function plot_transverse_profile(
+    x::AbstractVector, 
+    z::AbstractVector, 
+    field::AbstractMatrix,
+    zloc::Number
+    )
 
-function plot_with_corr(
+    dz = step(z)
+
+    zloc_int = Int64(round(zloc ./ dz))+1 # zloc is in μm, dz is in μm.
+
+    tfield = field[:, zloc_int]
+    # intensity = abs2.(tfield)
+    real_tfield = real.(tfield)
+    tfieldplot = plot(x./um, real_tfield./maximum(real_tfield), 
+                            label="$(zloc) um",
+                            title="Transverse profile at z=$(zloc) um", 
+                            xlabel="z (μm)",
+                            ylabel="x (μm)",
+                            lw=1.5, dpi=300,)
+
+    return tfieldplot
+
+end
+
+function plot_analysis(
     x::AbstractVector,
     z::AbstractVector, 
     field::AbstractMatrix, 
@@ -388,6 +415,56 @@ function plot_with_corr(
     # @show typeof(profileplots)
 
     return profileplots
+end
+
+function plot_various_corr(
+    ξ::AbstractVector, 
+    ξvind::AbstractVector, 
+    Pξ_abs::AbstractVector)
+
+    normed_Pξ_abs = Pξ_abs ./ maximum(Pξ_abs)
+
+    Pfz_anal = plotpeaks(ξ*um, normed_Pξ_abs; 
+                            peaks=ξvind, 
+                            prominences=true, widths=true, 
+                            # xlim=(-0.2, 0.2),
+                            # ylim=(0,ymax),
+                            # ylim=(10^-34, -10^-1),
+                            # annotations=anno)
+                        )
+
+    Pfz_anal_log = plotpeaks(ξ*um, normed_Pξ_abs; 
+                            peaks=ξvind,
+                            # prominences=true, widths=true, 
+                            # xlim=(-0.2, 0.2),
+                            # ylim=(0,ymax),
+                            yscale=:log10,  
+                            # ylim=(10^-34, -10^-1),
+                            # annotations=anno)
+                        )
+    Pfz_anal_log_ind = plotpeaks(ξ*um, normed_Pξ_abs; 
+                            peaks=ξvind,
+                            prominences=true, widths=true, 
+                            # xlim=(-0.2, 0.2),
+                            # ylim=(0,ymax),
+                            yscale=:log10,  
+                            # ylim=(10^-34, -10^-1),
+                            # annotations=anno)
+                        )
+
+    plots = [Pfz_anal, Pfz_anal_log, Pfz_anal_log_ind]
+
+    layout = @layout [grid(3,1)]
+
+    allplots = plot(plots..., 
+                    layout=layout, 
+                    size=(600, 800), 
+                    link=:x,
+                    left_margin=20px, 
+                    bottom_margin=20px,
+                    dpi=300)
+
+    return allplots
 end
 
 function get_h(
@@ -484,7 +561,7 @@ function get_h(
 
                 figname = "$nametag-after-propagation.png"
                 corr_h, ξ_h, ξvind_h, ξv_h, peakh_h, Pξ_abs_h = correlation_method(psi, dx, dz)
-                profileplots = plot_with_corr(x, z, psi, n, h, corr_h, 
+                profileplots = plot_analysis(x, z, psi, n, h, corr_h, 
                                                 ξ_h, ξv_h, ξvind_h, 
                                                 peakh_h, Pξ_abs_h; 
                                                 )
